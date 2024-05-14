@@ -9,3 +9,249 @@ output: html_document
 
 Purpose of the codes is to ingest, format, wrangle, and amalgamate the resposne and predictor data needed for the Parks VIC HMSC project. 
 This is a set up chunk of codes that ideally will be ran once and then the derivatives from it can be used in the future without needing to re-run.
+
+The overall aim of the project is to see if we can use joint species distribution models (JSDMs) to model the role that Victoria's marine parks have on the fish and invert communities present and see if we can identify environmental and biological factors which influence community composition. Our measure of success for the parks is to see if the communities are noticeably more complex and abundant in the park vs in adjacent reference areas. JSDMs are useful for this as we can predict the whole communities response (both to environmental variables, latent effects like space and time, and to biological interactions).
+
+This work is being undertaken in collaboration with Michael Sams (Park's VIC), UTAS (Joel Williams) and Deakin Uni (Mary Young, Oli Dalby).
+
+Fish and Invert data are taken from a long term dataset from Reff Life Survey spanning ~30 years of data (1992-2023).
+
+
+### Package import
+
+```{r}
+library(terra)
+library(collapse)
+library(sf)
+library(MultiscaleDTM) #For terrain metrics https://doi.org/10.1111/tgis.13067
+library(parallel)
+library(memuse)
+library(tmap)
+library(tidyverse)
+library(ncdf4)
+```
+
+### 1) Bathymetry and terrain derivatives
+
+One key predictor of fish and invert communities is the bathymetry (water depth) but also the terrain present. There are lots of metrics available to assess this so we can use a new package by Canadian colleagues.
+
+First we take existing 2.5m res bathy for the state, combine it into one statewide projection from two zonal ones, resample to 5m res. Then we can generate a 50m downsampled version of this bathymetry as our template raster for the study and can compute the relevant terrain metrics. 
+
+```{r}
+#Initial muck around with terra options to let it use lots of our available RAM
+terraOptions() #Show options we're working with by default
+memuse::Sys.meminfo() #Show RAM we have to work with too
+
+#Give terra up to 85% of RAM
+terraOptions(memfrac = 0.85)
+terraOptions()
+
+
+```
+
+```{r}
+#Set WD for layers we make
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
+
+#Import bathy for entire state. Extract bounding boxes and reproj these shapefiles to VICGrid
+
+VICBathyZ54 = rast("Z:/GIS-Res/DELWP/Veris_VICDEM2022_Delivery/VCDEM2021_Tiff/VCDEM_VicGrid2020_10m_Tiff/VCDEM2021_GDA2020_z54_Seamless.tif") %>% ext() %>% as.polygons(crs = "epsg:7854") %>% project("epsg:7899") %>% st_as_sf()
+
+VICBathyZ55 = rast("Z:/GIS-Res/DELWP/Veris_VICDEM2022_Delivery/VCDEM2021_Tiff/VCDEM_VicGrid2020_10m_Tiff/VCDEM2021_GDA2020_z55_Seamless.tif") %>% ext() %>% as.polygons(crs = "epsg:7855") %>% project("epsg:7899") %>% st_as_sf()
+
+#Mary has assured me that the two rasters were originally one, so we dont need to worry about the differences in bathymetry values where they overlap. They've already undergone standardisation processes before us.
+
+#Identify maximal extent of the rasters based on their combined reprojected extents
+temp = st_union(VICBathyZ54, VICBathyZ55) %>% vect()
+plot(temp) #Quick plot to make sure it doesnt look mental
+
+#Make template raster in VICGrid for the entire extent of the two rasters. This way we reproject each one onto the same grid to ensure cell size and origin are identical.
+#Also make the new template at 5m. This is the same as the res Mary sent us initially in the latyer that didn't work.
+Template = rast(xmin = ext(temp)[1],
+                xmax = ext(temp)[2],
+                ymin = ext(temp)[3],
+                ymax = ext(temp)[4],
+                crs = "epsg:7899",
+                resolution = 5)
+rm(temp)
+
+#Reproject both onto the new template grid.
+VICBathyZ54 = rast("Z:/GIS-Res/DELWP/Veris_VICDEM2022_Delivery/VCDEM2021_Tiff/VCDEM_VicGrid2020_10m_Tiff/VCDEM2021_GDA2020_z54_Seamless.tif") %>%
+  project(Template)
+
+VICBathyZ55 = rast("Z:/GIS-Res/DELWP/Veris_VICDEM2022_Delivery/VCDEM2021_Tiff/VCDEM_VicGrid2020_10m_Tiff/VCDEM2021_GDA2020_z55_Seamless.tif") %>%
+  project(Template)
+
+#Now merge
+origin(VICBathyZ54) == origin(VICBathyZ55) #Check origins match
+res(VICBathyZ54) == res(VICBathyZ55) #Check res match
+
+VICBathy5m = list(VICBathyZ54, VICBathyZ55) %>% sprc() %>% #Make spatraster collection
+  terra::merge(filename = "VICBathy5m.tif", overwrite = TRUE) 
+
+#Quick print of bathy details
+VICBathy5m %>% print()
+
+#Convert bathy layer to 50m res. This will form the template raster for the study. Calcing mean and SE.
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
+VICBathy50mMean = VICBathy5m %>% aggregate(fact = 10, fun = "mean", na.rm = TRUE, filename = "VICBathy50mMean.tif", overwrite = TRUE, cores = 5)
+VICBathy50mSD = VICBathy5m %>% aggregate(fact = 10, fun = "sd", na.rm = TRUE, filename = "VICBathy50mSD.tif", overwrite = TRUE, cores = 5)
+
+#Re-import bathymetry as we have already ran the above in previous days.
+VICBathy5m = rast("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VICBathy5m.tif")
+
+#Compute terrain matrices included in package as default (all of them) at 45m neighbourhood scale (9 cells in the 5m raster). Scale chosen as this is the scale at which RSL transects are undertaken (they are 50m in length).
+#Note we use the original bathy layer for this not the coarsened one.
+
+
+#REFUSES TO WORK RN
+
+
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
+TerrainMetrics = Qfit(VICBathy5m, w = c(9,9), na.rm = TRUE, 
+                         metrics = c("elev", "qslope", "qaspect", "qeastness", "qnorthness", "profc", "planc", "twistc", "meanc", "maxc", "minc"),
+                      filename = "VICTerrainMetrics45m.tif", overwrite = TRUE) #Calculate all available metrics bar the features variable
+
+#Also aggregate the terrain metrics to 50m res so they match the bathy. Calcing mean and SE of each layer again.
+
+
+
+
+
+
+
+
+
+```
+
+### Wave data
+
+Next off, import Wave data from Jin Liu (DEECA). These are models of the wave climate of victoria from https://doi.org/10.1016/j.renene.2023.118943 and https://doi.org/10.1016/j.ocemod.2022.101980. We will import all available data for the years 1992 through 2023, calculate the daily average (mean) and then compute an annual average and SD and a winter average and 95% CI. This will be completed for significant wave height, partitioned wind wave, partitioned primary and secondary swells, wind speed, peak wave direction, peak wave frequency, mean wave direction, mean wave freq (1/mean wave period). The idea behind using averages and seasonal measures is to capture the general conditions species present are exposed to and to also capture the season that is likely to be most stressful for them (in this case, winter).
+
+Wave variables and their meanings:
+Signif wave height = average height of the largest 1/3 of the waves. E.g. How big are the biggest waves?
+Peak Wave Direction = direction of the waves that have the highest energy. E.g. where are the big waves going?
+Peak Wave Freq = frequency (Hz) of the highest energy waves. E.g. how common are the big waves?
+Mean Wave Direction = direction the entire wave spectra are travelling in on average (includes big and small ones).
+Mean Wave Frequency = average freq of all waves in the unit time.
+Wind Wave = swell of waves originating from local wind forces.
+Primary and secondary swell heights = Primary swells occurs from far offshore and are normally larger, longer periods, and higher amplitudes. Secondaries are smaller, weaker.
+Wind speed = self explanatory.
+
+Data are in the form of one netcdf for each variable and year combination. So lots of looping is required here. Data available only span 1981 to 2020 so we will have to upper bound our analyses at 2020. We can still lower bound at 1992
+
+
+```{r}
+#Prep work
+directoriesList = c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/SignifWaveHeight",
+                    "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PeakWaveDirection",
+                    "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PeakWaveFreq",
+                    "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/MeanWaveDirection",
+                    "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/MeanWavePeriod",
+                    "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PartitionedWindWave",
+                    "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PartitionedPrimarySwell",
+                    "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PartitionedSecondarySwell",
+                    "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/WindSpeed")
+
+years = seq(1992, 2020, 1) %>% as.character()
+
+files = map(years, str_subset, string = directoriesList[1] %>% list.files()) %>% reduce(union) #Map function to the rescue!
+
+#Connect to first netcdf and extract matrix dimensions for Lat Lon.
+data = nc_open(str_c(directoriesList[1], "/", files[1])) #Only get first slice of data
+
+#Make holder arrays. Array as above but with N layers where N = number of years we're working with. Need one per variable we want to extract.
+lat = ncvar_get(data, "latitude") #Get node lat
+lon = ncvar_get(data, "longitude") #Get node lon
+annualMean = matrix(data = NA, nrow = length(lat), ncol = length(years)) #Rows = number of nodes, Cols = N years assessed
+annualSD = matrix(data = NA, nrow = length(lat), ncol = length(years)) #Rows = number of nodes, Cols = N years assessed
+winterMean = matrix(data = NA, nrow = length(lat), ncol = length(years)) #Rows = number of nodes, Cols = N years assessed
+winterSD = matrix(data = NA, nrow = length(lat), ncol = length(years)) #Rows = number of nodes, Cols = N years assessed
+winter95th = matrix(data = NA, nrow = length(lat), ncol = length(years)) #Rows = number of nodes, Cols = N years assessed
+
+
+#From here on the values change based on the file we read in so we need to change them iteratively over loops.
+for (i in 1:length(years)) {
+  
+print("Completing Loop")
+print(i)
+  
+data = nc_open(str_c(directoriesList[1], "/", files[i])) #Only get first slice of data
+
+date = ncvar_get(data, "time") %>% as.Date(origin = "1990-01-01 00:00:00", tz = "Australia/Victoria") %>% as.character() #Grab date of each time slice. 24 slices per day (so each slice is an hour).
+
+fullArray = ncvar_get(data, "hs") #Data are in long form. 97276 nodes (not in lat long - rows) and time (number of time entries varies between years - cols).
+
+dailyMean = fullArray  %>% t() %>% data.frame() #Transpose so days are now rows
+
+dailyMean = dailyMean %>% 
+  mutate(date = date) %>% #Add grouping variable that is date
+  fgroup_by(date) %>% #Using f functions as they're super fast versions of the normal dplyr stuff
+  fmean(na.rm = TRUE) %>% #Calc daily mean
+  mutate(month = month(date)) #Append new month column
+
+#We can now calculate our annual measures (mean and SD). Returns vectors of values which can be slotted straight into holders.
+annualMean[,i] = dailyMean %>% 
+  dplyr::select(!c(date, month)) %>% 
+  fmean(na.rm = TRUE)
+
+annualSD[,i] = dailyMean %>% 
+  dplyr::select(!c(date, month)) %>% 
+  fsd(na.rm = TRUE)
+
+#And our seasonal measures - wave data want winter mean, SD, 95th. Returns vectors of values which can be slotted straight into holders.
+winterMean[,i] = dailyMean %>% 
+  dplyr::select(!date) %>%
+  filter(month %in% c(7,8,9)) %>% 
+  dplyr::select(!month) %>% 
+  fmean()
+
+winterSD[,i] = dailyMean %>% 
+  dplyr::select(!date) %>%
+  filter(month %in% c(7,8,9)) %>% 
+  dplyr::select(!month) %>% 
+  fsd()
+
+temp = dailyMean %>% #Quantiles function cant take dataframes so we need to loop again
+  dplyr::select(!date) %>%
+  filter(month %in% c(7,8,9)) %>% 
+  dplyr::select(!month)
+
+winter95th[,i] = sapply(temp, FUN = quantile, probs = c(0.95), na.rm = TRUE)
+
+#Drop objects to save RAM, disconnect from netcdf, then close loop after final iteration
+rm(date, fullArray, dailyMean, data)
+nc_close(data)
+
+}
+
+#Now the variable is done we can export the matrices as separate R files to save RAM.
+saveRDS(annualMean,
+        str_c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/",
+             directoriesList[1] %>% str_split(pattern = "/") %>% unlist() %>% dplyr::last(),
+             "AnnualMean"))
+
+saveRDS(annualSD,
+        str_c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/",
+             directoriesList[1] %>% str_split(pattern = "/") %>% unlist() %>% dplyr::last(),
+             "AnnualSD"))
+
+saveRDS(winterMean,
+        str_c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/",
+             directoriesList[1] %>% str_split(pattern = "/") %>% unlist() %>% dplyr::last(),
+             "WinterMean"))
+
+saveRDS(winterSD,
+        str_c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/",
+             directoriesList[1] %>% str_split(pattern = "/") %>% unlist() %>% dplyr::last(),
+             "WinterMean"))
+
+saveRDS(winter95th,
+        str_c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/",
+             directoriesList[1] %>% str_split(pattern = "/") %>% unlist() %>% dplyr::last(),
+             "Winter95th"))
+        
+
+
+```
+
