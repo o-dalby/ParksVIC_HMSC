@@ -28,6 +28,7 @@ library(memuse)
 library(tmap)
 library(tidyverse)
 library(ncdf4)
+library(INLA)
 ```
 
 ### 1) Bathymetry and terrain derivatives
@@ -123,7 +124,7 @@ TerrainMetrics = Qfit(VICBathy5m, w = c(9,9), na.rm = TRUE,
 
 ```
 
-### Wave data
+### 2) Wave data
 
 Next off, import Wave data from Jin Liu (DEECA). These are models of the wave climate of victoria from https://doi.org/10.1016/j.renene.2023.118943 and https://doi.org/10.1016/j.ocemod.2022.101980. We will import all available data for the years 1992 through 2023, calculate the daily average (mean) and then compute an annual average and SD and a winter average and 95% CI. This will be completed for significant wave height, partitioned wind wave, partitioned primary and secondary swells, peak wave frequency, mean wave freq (1/mean wave period). The idea behind using averages and seasonal measures is to capture the general conditions species present are exposed to and to also capture the season that is likely to be most stressful for them (in this case, winter).
 
@@ -282,10 +283,234 @@ for (i in 1:length(files)){
 
 ```
 
+Now, let's convert our datasets into XYZ format so they're easier to work with in a spatial setting.
+
+```{r}
+#Grab Lat and Long data from original netcdf. These are in a worldwide projection EPSG4326.
+data = nc_open("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/MeanWaveDirection/ww3.hindcast_1981_dir.nc") #Just an example nc, they all have identical dimensions
+latitude = ncvar_get(data, "latitude") #%>% data.frame() %>% rename(latitude = names(.)[1])
+longitude = ncvar_get(data, "longitude") #%>% data.frame() %>% rename(longitude = names(.)[1])
+nc_close(data)
+
+#Convert the location data to an sf object so we can get spatial. 
+#MAJOR NOTE!!! These data are already in column form (i.e. we dont need to expand the grid as we do the temp data). We can just bind them as columns.
+XYsf = data.frame(longitude = longitude,
+                  latitude = latitude) %>% 
+  st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% 
+  mutate(longitude = st_coordinates(.)[,1],
+         latitude = st_coordinates(.)[,2]) %>% 
+  st_drop_geometry()
+
+#Import the data we wish to interpolate.
+directoriesList = "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/"
+files = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves")
+yearsAnnual = seq(1992, 2020)
+
+#Loop through each layer of the array and add the years data as a separate column
+for (j in 1:length(files)) {
+  
+  print(str_c("Working on variable ", files[j]))
+
+  #Read in array values
+  arrayValues = readRDS(str_c(directoriesList[1],
+    files[j]))
+  
+  #Make a copy to muck around with in the inner loop
+  Holder = XYsf
+
+  for (i in (1:dim(arrayValues)[2])){
+  
+    print(str_c("Processing slice ", i))
+  
+    Holder[[i+2]] = arrayValues[,i]
+  }
+
+  #Rename Columns
+  names(Holder)[3:length(names(Holder))] = yearsAnnual[3:ncol(Holder)-2]
+  
+  #Save
+  saveRDS(Holder,
+          str_c(directoriesList[1],
+                files[j],
+                "XYZ"))
+}
 
 
-### Temperature Data
 
-Now we've got the wave predictors wrangled and exported (but notably not interpolated quite yet) we can rinse and repeat for the temperature data. This data is sourced from the AODN (Australian Ocean Data Network). MORE DETAILS NEEDED.
+```
+
+### 3) Temperature Data
+
+Now we've got the wave predictors wrangled and exported (but notably not interpolated quite yet) we can rinse and repeat for the temperature data. This data is sourced from the AODN (Australian Ocean Data Network). Data are monthly means collated from daily data. Data are NOAA Daily Optimum Interpolation Sea Surface Temperature originally but aggregated to monthly means. Relevant papers are Reynolds, et al.(2007) https://doi.org/10.1175/2007JCLI1824.1), Banzon, et al.(2016) https://doi.org/10.5194/essd-8-165-2016), Huang, B., C. Liu, V. Banzon, E. Freeman, G. Graham, B. Hankins, T. Smith, and H.-M. Zhang, 2021 https://doi.org/10.1175/JCLI-D-20-0166.1). Data links: 
+
+Description.....https://www.ncei.noaa.gov/access/metadata/landing-page/bin/iso?id=gov.noaa.ncdc:C00680.
+Download......https://psl.noaa.gov/data/gridded/data.noaa.oisst.v2.highres.html
+
 
 Shout out to Dr Alex Shute for handling the data export for these variables.
+
+Generally we can take the same steps as we did above for each of the wave variables. We want the mean and SD annually and the summer mean, sd, and 95th percentile.
+
+```{r}
+#Investigate the netcdfs first
+directoriesList = c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Temperature")
+
+files = list.files(directoriesList) %>% str_subset(pattern = ".nc")#Map function to the rescue!
+
+#First dataset 
+data = nc_open(str_c(directoriesList, "/", files[2]))
+
+data
+
+date = ncvar_get(data, "time") %>% as.Date(origin = "1800-01-01 00:00:00", tz = "Australia/Victoria") %>% as.character()
+
+print(date[1]) #Time starts at 1981-09-01
+print(date[length(date)-1]) #And ends at 2024-03-01
+
+rm(date) #Don't need this level of detail as we are working with annual means and monthly data
+
+yearmonth = ncvar_get(data, "time") %>% as.Date(origin = "1800-01-01 00:00:00", tz = "Australia/Victoria") %>% format("%Y-%m") %>% as.character()
+year = ncvar_get(data, "time") %>% as.Date(origin = "1800-01-01 00:00:00", tz = "Australia/Victoria") %>% format("%Y") %>% as.character()
+month = ncvar_get(data, "time") %>% as.Date(origin = "1800-01-01 00:00:00", tz = "Australia/Victoria") %>% format("%m") %>% as.character()
+
+#Load in full array of all data
+fullArray = ncvar_get(data, "sst")
+dim(fullArray) #Long, Lat, Time
+
+#Calculate Annual Mean and SD
+
+AnnualMeanHolder = array(data = NA, dim = c(108, 80, year %>% unique() %>% length()))
+AnnualSDHolder = array(data = NA, dim = c(108, 80, year %>% unique() %>% length()))
+
+for (i in 1:length(unique(year))){
+  
+  print(str_c("Calculting year ", i))
+  
+  subset = fullArray[, , min(which(year == unique(year)[i])) : max(which(year == unique(year)[i]))] #Load ith year of data in
+  
+  AnnualMeanHolder[, , i] = apply(subset, MARGIN = c(1,2), FUN = "mean", na.rm = TRUE) #Calc mean and store in ith layer
+  AnnualSDHolder[, , i] = apply(subset, MARGIN = c(1,2), FUN = "sd", na.rm = TRUE) #Calc se and store in ith layer
+  
+}
+
+#Export Annual Measures
+saveRDS(AnnualMeanHolder,
+        "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/TemperatureAnnualMean")
+
+saveRDS(AnnualSDHolder,
+        "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/TemperatureAnnualSD")
+
+
+#Repeat for Summer equivalents - Dec -> Feb. Trickier as Dec is year X and Jan-Feb is YearX+1 but they need to sit together before being averaged.
+Summeryearmonth = yearmonth[month %>% as.numeric() %in% c(12, 1, 2)]
+
+summerArray = fullArray[, , which(yearmonth %in% Summeryearmonth)] #Retain only summer months from full array
+
+SummerMeanHolder = array(data = NA, dim = c(108, 80, year %>% unique() %>% length()-1))
+SummerSDHolder = array(data = NA, dim = c(108, 80, year %>% unique() %>% length()-1))
+Summer95thHolder = array(data = NA, dim = c(108, 80, year %>% unique() %>% length()-1))
+
+for (i in 1:(dim(summerArray)[3]/3)){ #Dividing by 3 gives us the number of summer period (43). One less than the years we have (44) as summer spans two years each year.
+  
+  print(str_c("Calculting year ", i))
+  
+  subset = summerArray[ , , (((i-1)*3)+1) : (((i-1)*3)+2)] #Load ith year of data in. Rows 1-3, 4-6, 7-9, 10-12, etc.
+  
+  SummerMeanHolder[, , i] = apply(subset, MARGIN = c(1,2), FUN = "mean", na.rm = TRUE) #Calc mean and store in ith layer
+  SummerSDHolder[, , i] = apply(subset, MARGIN = c(1,2), FUN = "sd", na.rm = TRUE) #Calc se and store in ith layer
+  SummerSDHolder[, , i] = apply(subset, MARGIN = c(1,2), FUN = "quantile", na.rm = TRUE, probs = c(0.95)) #Calc se and store in ith layer
+
+}
+
+
+#Export Annual Measures
+saveRDS(SummerMeanHolder,
+        "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/TemperatureSummerMean")
+
+saveRDS(SummerSDHolder,
+        "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/TemperatureSummerSD")
+
+saveRDS(Summer95thHolder,
+        "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/TemperatureSummer95th")
+
+
+```
+
+Like we did for the wave data, let's now change our data into an XYZ format. This will make things easier for our interpolations.
+
+```{r}
+#Grab Lat and Long data from original netcdf. These are in a worldwide projection EPSG4326.
+data = nc_open("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Temperature/noaa_sst_masked_southeast_aus.nc")
+latitude = data$dim$lat$vals #%>% data.frame() %>% rename(latitude = names(.)[1])
+longitude = data$dim$lon$vals #%>% data.frame() %>% rename(longitude = names(.)[1])
+nc_close(data)
+
+#Convert the location data to an sf object so we can get spatial.
+XYsf = base::expand.grid(longitude, latitude) %>% 
+  rename(latitude = names(.)[2],
+         longitude = names(.)[1]) %>% 
+  st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% 
+  mutate(longitude = st_coordinates(.)[,1],
+         latitude = st_coordinates(.)[,2]) %>% 
+  st_drop_geometry()
+
+#Import the data we wish to interpolate.
+directoriesList = "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/"
+files = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature")
+yearsAnnual = seq(1981, 2024)
+
+#Loop through each layer of the array and add the years data as a separate column
+for (j in 1:length(files)) {
+  
+  print(str_c("Working on variable ", files[j]))
+
+  #Read in array values
+  arrayValues = readRDS(str_c(directoriesList[1],
+    files[j]))
+  
+  #Make a copy to muck around with in the inner loop
+  Holder = XYsf
+
+  for (i in (1:dim(arrayValues)[3])){
+  
+    print(str_c("Processing slice ", i))
+  
+    Holder[[i+2]] = arrayValues[,,i] %>% matrix(ncol = 1, byrow = FALSE)
+  }
+
+  #Rename Columns
+  names(Holder)[3:length(names(Holder))] = yearsAnnual[3:ncol(Holder)-2]
+  
+  #Save
+  saveRDS(Holder,
+          str_c(directoriesList[1],
+                files[j],
+                "XYZ"))
+}
+
+```
+
+
+### 4) Interpolations
+
+Now we need to interpolate the results of the temperature and wave data arrays to te template raster. 
+
+Beginning with temperature data as it's the smaller set of data. The inla process can be quite complex....be warned.
+
+```{r}
+#Guidance from this link
+#https://rpubs.com/jafet089/886687
+#Another excellent INLA resource
+#https://ourcodingclub.github.io/tutorials/inla/
+#Another one
+#https://www.paulamoraga.com/book-geospatial/sec-inla.html
+
+#Import the bathymetry layer we are using as our template
+templateRast = rast("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VICBathy5m.tif")
+
+
+
+
+
+
+```
