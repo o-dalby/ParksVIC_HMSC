@@ -29,6 +29,8 @@ library(tmap)
 library(tidyverse)
 library(ncdf4)
 library(INLA)
+library(raster)
+library(tictoc)
 ```
 
 ### 1) Bathymetry and terrain derivatives
@@ -630,9 +632,41 @@ for (j in 1:length(files)) {
 
 ### 4) Interpolations
 
-Now we need to interpolate the results of the temperature and wave data arrays to te template raster. 
+Now we need to interpolate the results of the temperature and wave data arrays to the template raster. 
+
+First off, not all the years we have predictor data for are actually in our response data. Let's import the resposne data and muck around wtih it.
+
+```{r}
+#Import fish and invert response data
+fishData = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/CoarseLatLon/Final_Fish_AbundanceMatrix.csv")
+invertData = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/CoarseLatLon/Final_Inverts_AbundanceMatrix.csv")
+
+#Some of our datapoints are outside of our focal polygon. Drop em.
+coastlinePoly = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VIC_coastalwaters_mask.shp") %>% st_transform(crs = "EPSG:7899")
+
+fishDataSf = fishData %>% st_as_sf(coords = c("Longitude", "Latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly)
+
+invertDataSf = invertData %>% st_as_sf(coords = c("Longitude", "Latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly)
+
+#How many rows did we drop from each dataset?
+print(nrow(fishData) - nrow(fishDataSf))
+print(nrow(invertData) - nrow(invertDataSf))
+
+#Years present in each dataset
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/CoarseLatLon/")
+fishYears = fishDataSf$Year %>% unique()
+fishYears %>% saveRDS("fishYears")
+invertYears = invertDataSf$Year %>% unique()
+fishYears %>% saveRDS("fishYears")
+
+#Do fish years match the invert years?
+fishYears == invertYears #Yep all match
+
+```
 
 Beginning with temperature data as it's the smaller set of data. The inla process can be quite complex....be warned.
+
+Setting up the mesh we need by first importing and setting up the target raster grid and the boundary we'll use. These components are the same across all the variables and timesteps we want to interpolate.
 
 ```{r}
 #Guidance from this link
@@ -642,12 +676,129 @@ Beginning with temperature data as it's the smaller set of data. The inla proces
 #Another one
 #https://www.paulamoraga.com/book-geospatial/sec-inla.html
 
-#Import the bathymetry layer we are using as our template
-templateRast = rast("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VICBathy5m.tif")
+#Import the bathymetry layer we are using as our template for xys we want to interpolate onto
+templateRast = rast("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VICBathy50mMean.tif")
 
+#Make polygon version of the bathymetry
+templatePoly = templateRast %>% as.polygons()
 
-
-
-
+#Convert polygon to domain structure INLA wants. Takes a fair while due to size of the polygon we give it.
+boundary = templatePoly %>% st_as_sf() %>% as_Spatial() %>% inla.sp2segment()
 
 ```
+
+Now we have that done we can work with the data to be interpolated. This will vary between variables and the year being interpolated so it is far more changeable.
+
+Working with temperature data first. The data (temp vs waves) are on different projections at present so we'll split the interpolations into two loops.
+
+```{r}
+#Calculate the maximum edge length across the data we wish to interpolate (the wave/temp data). Initial guestimate based on the guidance from the links mentioned above.
+#Doing this with the first temperature layer as the spatial points are the same between years.
+
+#Remember!!! The temperature data begin in WGS84 as they come from a global dataset.
+
+variableList = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature") %>% 
+  str_subset(pattern = "XYZ", negate = TRUE) #Keep only those without. Five temperature measures to work through.
+
+focalYears = readRDS("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/CoarseLatLon/fishYears") %>% as.character()
+
+for (j in 1:length(variableList)){
+  
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature")
+
+  filesList = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature") %>% 
+                          str_subset(string = ., pattern = "XYZ", negate = FALSE)
+  
+  print(str_c("Working on ", filesList[j]))
+  
+  ToInterpolate = readRDS(filesList[j]) %>% dplyr::select(c(longitude, latitude, focalYears)) %>%  #Read in jth file and drop any columns we dont have animal data for
+  st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG7899")
+  
+for (i in 1:(ncol(ToInterpolate)-1)){ #Skip last col as it's geometry
+ 
+  print(str_c("Interpolating ", names(ToInterpolate)[i], " Data"))
+  
+  ###################################
+  PLACEHOLDER FOR INTERPOLATION CODES
+  ##################################
+  
+   
+}
+  
+}
+
+
+
+
+
+ToInterpolate = readRDS("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/TemperatureAnnualMeanXYZ")
+ToInterpolateXYs = ToInterpolate %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = crs(templateRast)) %>% st_coordinates()
+max.edgeL = diff(range(ToInterpolateXYs[,1]))/(3*5)
+
+bound.outer = max.edgeL*5 #Define distance we want our outer boundary to sit outside of the focal extent. Lindgren and Rue (2015) suggest it needs to be at least greater than the range effect. More generally Righettoa et al (2018) found that the cutoff and the max edge length in the inner domain had the greatest impact.
+cutoffL = max.edgeL/5 #Distance at which to join adjacent vertices. Stops the mesh having heaps of tiny points crammed in together.
+
+
+
+#Extract locations we want to predict onto from the template raster
+predictLoc = templateRast %>% as.data.frame(xy = TRUE) %>% as.matrix() #Make points of where we want to compute data for
+predictLoc = predictLoc[,1:2] #Convert locations to only xy cols
+
+#Build computational meshes - can take a while due to the small size of the triangles compared to the domain extent.
+tic()
+mesh <- INLA::inla.mesh.2d(loc=ToInterpolateXYs, boundary = boundary, max.edge = c(1,5)*max.edgeL, offset=c(max.edgeL, bound.outer), cutoff=cutoffL) #Make non-uniform grid across spatial extent of sample locales. Note the boundary argument to stop it training the model in areas we don't want it to
+toc()
+
+plot(mesh)
+
+plot(mesh)
+plot(ToInterpolate %>% st_as_sf(coords = c("longitude", "latitude"), crs = crs(templatePoly)) %>% as_Spatial(), add=T, col="red")
+
+A.data <- inla.spde.make.A(mesh=mesh, loc=as.matrix(ToInterpolateXYs)) #Make A matrix that is used to map the Gaussian Markov Random Field from the mesh nodes to the n observed locations
+spde <- inla.spde2.matern(mesh=mesh, alpha = 2) #Make spatial structure object. Alpha is smoothness parameter, 2 is max smoothness
+iset <- inla.spde.make.index(name = "spatial.field", spde$n.spde)
+
+A.data2 <- inla.spde.make.A(mesh=mesh, loc=predictLoc) #Make a matrix used to map the Gaussian Markov Random Field to the locations we want to predict at using the model we will generate using A.data (the first one).
+
+#Stack for model fitting
+stk <- inla.stack(data=list(y=masterPPBCropspdf$waterElev), #Response variable 
+  A=list(A.data, 1
+        ), #A matrix
+  effects=list(iset, #Spatial structure object 
+  intercept=rep(1,nrow(masterPPBCropspdf))
+  ),
+  tag="waterElev") #Name for object
+
+#Make a stack for model prediction
+stk_pred <- inla.stack(data=list(y=NA),
+  A=list(A.data2, 1
+  ), #A matrix 
+  effects=list(iset, #Spatial structure object 
+  intercept=rep(1,nrow(predictLoc))
+  ),
+  tag="waterElevPred") #Name for object
+
+#Join stacks. The fitting stack and prediction stack need to become one stack to pass to the INLA argument
+join.stack <- inla.stack(stk, stk_pred)
+
+#Define simple formula
+formula <- y ~ -1 + intercept + f(spatial.field, model=spde) #super simple model. Water elevation predicted is the intercept plus a spatial effect. This is the equivilant of kriging.
+
+tic() #Start timer
+mod <- inla(formula, #formula from above
+  data=inla.stack.data(join.stack, spde=spde, #data stack
+  family="gamma"), #Define distribution
+  control.inla = list(h=0.0001),
+  control.predictor=list(A = inla.stack.A(join.stack), compute=TRUE, link=1), #Tell INLA what predictor mesh to use, to compute the predictions, and that the predictions need to use the same link as the family specifies. FOr when we vary the family this means that all outputs will automatically be back transformed.
+  control.family = list(link = "default"), #Tell INLA to use the default approximation of the gaussian family
+  control.compute=list(openmp.strategy="huge", cpo=TRUE, dic=TRUE,
+  return.marginals=TRUE),#INLA uses different degrees of parallelism depending on how big of a job it sees the model as. Let's see if setting it to huge speeds up the process.
+  num.threads = detectCores()-1) #Tell INLA it can use all but 1 core for computation.
+toc() #End timers
+
+tic()
+hyper <- inla.hyperpar(mod) #Put outputs of hyperparameters into a separate object. This function re-calculates the posterior estimates of the hyperparams and apparently makes better estimates than those in the mod object above. R documentation says it may take a long time.
+toc()
+
+```
+
