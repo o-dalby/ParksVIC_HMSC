@@ -245,9 +245,17 @@ for (i in 1:length(metrics)) {
     aggregate(fact = 10,
               fun = "mean",
               na.rm = TRUE,
-              filename = str_c(metrics[i], "Statewide50m.tif"), 
+              filename = str_c(metrics[i], "Statewide50mMean.tif"), 
               overwrite = TRUE)
   
+    raster = list.files() %>% 
+    str_subset(pattern = str_c(metrics[i], "Statewide.tif")) %>% 
+    rast() %>% 
+    aggregate(fact = 10,
+              fun = "sd",
+              na.rm = TRUE,
+              filename = str_c(metrics[i], "Statewide50mSD.tif"), 
+              overwrite = TRUE)
 }
 
 
