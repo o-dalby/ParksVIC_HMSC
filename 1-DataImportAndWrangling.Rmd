@@ -68,11 +68,11 @@ setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
 #Make template raster in VICGrid for the entire extent of the two rasters. This way we reproject each one onto the same grid to ensure cell size and origin are identical.
 #Also make the new template at 5m. This is the same as the res Mary sent us initially in the latyer that didn't work.
 #Template = rast(xmin = ext(temp)[1],
-                #xmax = ext(temp)[2],
-                #ymin = ext(temp)[3],
-                #ymax = ext(temp)[4],
-                #crs = "epsg:7899",
-                #resolution = 5)
+#              xmax = ext(temp)[2],
+#              ymin = ext(temp)[3],
+#              ymax = ext(temp)[4],
+#              crs = "epsg:7899",
+#              resolution = 5)
 #rm(temp)
 
 #Reproject both onto the new template grid.
@@ -87,10 +87,18 @@ setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
 #res(VICBathyZ54) == res(VICBathyZ55) #Check res match
 
 #VICBathy5m = list(VICBathyZ54, VICBathyZ55) %>% sprc() %>% #Make spatraster collection
-#  terra::merge(filename = "VICBathy5m.tif", overwrite = TRUE) 
+#  terra::merge(filename = "VICBathy5mMerged.tif", overwrite = TRUE) 
 
 #Quick print of bathy details
 #VICBathy5m %>% print()
+
+#Clip and mask the bathy layer to only include areas from the coastline to sea. gets rid of lots of cells on land we dont care about.
+#coastlinePoly = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VIC_coastalwaters_mask.shp") %>% st_transform(crs = "EPSG:7899") %>% vect()
+#setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
+#names(VICBathy5m) = "VCDEM2021"
+#VICBathy5m = VICBathy5m %>% mask(coastlinePoly) %>% crop(coastlinePoly,
+#                                                         filename = "VICBathy5mCoastClipped.tif",
+#                                                         overwrite = TRUE)
 
 #Convert bathy layer to 50m res. This will form the template raster for the study. Calcing mean and SE.
 #setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
@@ -98,28 +106,149 @@ setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
 #VICBathy50mSD = VICBathy5m %>% aggregate(fact = 10, fun = "sd", na.rm = TRUE, filename = "VICBathy50mSD.tif", overwrite = TRUE, cores = 5)
 
 #Re-import bathymetry as we have already ran the above in previous days.
-VICBathy5m = rast("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VICBathy5m.tif")
+VICBathy5m = rast("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VICBathy5mCoastClipped.tif")
 
-#Compute terrain matrices included in package as default (all of them) at 45m neighbourhood scale (9 cells in the 5m raster). Scale chosen as this is the scale at which RSL transects are undertaken (they are 50m in length).
+#Compute terrain matrices at 45m neighbourhood scale (9 cells in the 5m raster). Scale chosen as this is the scale at which RSL transects are undertaken (they are 50m in length).
 #Note we use the original bathy layer for this not the coarsened one.
 
+subsets = VICBathy5m %>% ext() %>% as.polygons(crs = crs(VICBathy5m)) %>% 
+  split(f = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/Splits.shp") %>% vect())
 
-#REFUSES TO WORK RN
+#Calculate single metrics as computing them all at returns fatal error. Splitting raster into subsets as computing on the full layer, even with one metric, also breaks R.
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
 
+for (i in 1:length(subsets)){
+
+print(str_c("Working on Subset ", i))  
+
+print("Getting cropped raster")
+subsetBuff1 = subsets[i] %>% terra::buffer(width = 250) #Take subset and make buffer to reduce edge effects. 250m wide to ensure we dont impact edge values.
+
+rastSubset = VICBathy5m %>% mask(subsetBuff1) %>% crop(subsetBuff1) #Subset raster using buffered subset polygon. Calculating each terrain metric on one subset at a time.
+
+subsetBuff2 = subsets[i] %>% terra::buffer(width = 10) #Make another buffer thats a smidge larger than our raster to ensure that we are including all the data we want in our eventual merges. Dont want to introduce holes into the rasters we make!
+
+print("Calculating Slope")
+Slope = Qfit(rastSubset,
+             na.rm = TRUE,
+             metrics = c("qslope")) %>% 
+  mask(subsetBuff2) %>% crop(subsetBuff2, filename = str_c("SlopeSubset", i, ".tif"), overwrite = TRUE) #Drop any cells associated with the buffer we provided now we have our terrain metric
+
+rm(Slope)
+gc()
+
+print("Calculating Northness")
+Northness = Qfit(rastSubset,
+             w = c(9,9),
+             na.rm = TRUE,
+             metrics = c("qnorthness")) %>% 
+  mask(subsetBuff2) %>% crop(subsetBuff2, filename = str_c("NorthnessSubset", i, ".tif"), overwrite = TRUE)
+
+rm(Northness)
+gc()
+
+print("Calculating Eastness")
+Eastness = Qfit(rastSubset,
+             w = c(9,9),
+             na.rm = TRUE,
+             metrics = c("qeastness")) %>% 
+  mask(subsetBuff2) %>% crop(subsetBuff2, filename = str_c("EastnessSubset", i, ".tif"), overwrite = TRUE)
+
+rm(Eastness)
+gc()
+
+print("Calculating Profile Curvature")
+Profc = Qfit(rastSubset,
+             w = c(9,9),
+             na.rm = TRUE,
+             metrics = c("profc")) %>% 
+  mask(subsetBuff2) %>% crop(subsetBuff2, filename = str_c("ProfcSubset", i, ".tif"), overwrite = TRUE)
+
+rm(Profc)
+gc()
+
+print("Calculating Calculating Planar Curvature")
+Planc = Qfit(rastSubset,
+             w = c(9,9),
+             na.rm = TRUE,
+             metrics = c("planc")) %>% 
+  mask(subsetBuff2) %>% crop(subsetBuff2, filename = str_c("PlancSubset", i, ".tif"), overwrite = TRUE)
+
+rm(Planc)
+gc()
+
+print("Calculating Twisting Curvature")
+Twistc = Qfit(rastSubset,
+             w = c(9,9),
+             na.rm = TRUE,
+             metrics = c("twistc")) %>% 
+  mask(subsetBuff2) %>% crop(subsetBuff2, filename = str_c("TwistcSubset", i, ".tif"), overwrite = TRUE)
+
+rm(Twistc)
+gc()
+
+print("Calculating BPI")
+BPI = BPI(rastSubset,
+             w = c(9,9),
+             na.rm = TRUE) %>% 
+  mask(subsetBuff2) %>% crop(subsetBuff2, filename = str_c("BPISubset", i, ".tif"), overwrite = TRUE)
+
+rm(BPI)
+gc()
+
+print("Calculating Adjusted SD")
+AdjSD = AdjSD(rastSubset,
+             w = c(9,9),
+             na.rm = TRUE) %>% 
+  mask(subsetBuff2) %>% crop(subsetBuff2, filename = str_c("AdjSDSubset", i, ".tif"), overwrite = TRUE)
+
+rm(AdjSD)
+gc()
+
+print("Calculating VRM")
+VRM = VRM(rastSubset,
+             w = c(9,9),
+             na.rm = TRUE) %>% 
+  mask(subsetBuff2) %>% crop(subsetBuff2, filename = str_c("VRMSubset", i, ".tif"), overwrite = TRUE)
+
+rm(VRM)
+gc()
+
+}
+
+#Take all the subsets for each metric calculated and merge them into one.
+metrics = c("Slope", "Northness", "Eastness", "Profc", "Planc", "Twistc", "BPI", "AdjSD", "VRM")
 
 setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
-TerrainMetrics = Qfit(VICBathy5m, w = c(9,9), na.rm = TRUE, 
-                         metrics = c("elev", "qslope", "qaspect", "qeastness", "qnorthness", "profc", "planc", "twistc", "meanc", "maxc", "minc"),
-                      filename = "test.tif", overwrite = TRUE) #Calculate all available metrics bar the features variable
 
-#Also aggregate the terrain metrics to 50m res so they match the bathy. Calcing mean and SE of each layer again.
+for (i in 1:length(metrics)) {
+  
+  #Import all the rasters from a given metric and store as sprc. Then merge them back to one large raster. Becuase we use such large overlaps in our buffers the overlaps present between the rasters here contain identical values.
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
+  stack = list.files() %>% 
+    str_subset(pattern = str_c(metrics[i], "Subset")) %>% 
+    sprc() %>% 
+    merge(filename = str_c(metrics[i], "Statewide.tif"), 
+            overwrite = TRUE)
+  
+}
 
 
-
-
-
-
-
+#Also aggregate the terrain metrics to 50m res so they match the bathy.
+for (i in 1:length(metrics)) {
+  
+  #Import all the rasters from a given metric and then export to 50m res using the mean cell value.
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
+  raster = list.files() %>% 
+    str_subset(pattern = str_c(metrics[i], "Statewide.tif")) %>% 
+    rast() %>% 
+    aggregate(fact = 10,
+              fun = "mean",
+              na.rm = TRUE,
+              filename = str_c(metrics[i], "Statewide50m.tif"), 
+              overwrite = TRUE)
+  
+}
 
 
 ```
