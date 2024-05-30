@@ -51,7 +51,7 @@ terraOptions()
 
 ```
 
-```{r}
+```{r, eval = FALSE}
 #Set WD for layers we make
 setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
 
@@ -113,8 +113,11 @@ VICBathy5m = rast("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathyme
 #Compute terrain matrices at 45m neighbourhood scale (9 cells in the 5m raster). Scale chosen as this is the scale at which RSL transects are undertaken (they are 50m in length).
 #Note we use the original bathy layer for this not the coarsened one.
 
-subsets = VICBathy5m %>% ext() %>% as.polygons(crs = crs(VICBathy5m)) %>% 
-  split(f = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/Splits.shp") %>% vect())
+#subsets = VICBathy5m %>% ext() %>% as.polygons(crs = crs(VICBathy5m)) %>% 
+#  split(f = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/Splits.shp") %>% vect())
+
+#Subsetting layers generated from polygon splitter tool in QGIS used on a polygon of the raster extent
+subsets = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/TerrainMetricsSubsets.shp") %>% vect()
 
 #Calculate single metrics as computing them all at returns fatal error. Splitting raster into subsets as computing on the full layer, even with one metric, also breaks R.
 setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
@@ -277,7 +280,7 @@ Primary and secondary swell heights = Primary swells occurs from far offshore an
 Data are in the form of one netcdf for each variable and year combination. So lots of looping is required here. Data available only span 1981 to 2020 so we will have to upper bound our analyses at 2020. We can still lower bound at 1992
 
 
-```{r}
+```{r, eval = FALSE}
 #Prep work
 directoriesList = c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/SignifWaveHeight",
                     "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PeakWaveFreq",
@@ -403,7 +406,7 @@ rm(annualMean, annualSD, winterMean, winterSD, winter95th)
 We have the frequency for the peak wave data but the period for the mean wave data. Let's do a quick loop and remedy that and convert the mean wave period to the mean wave freq.
 
 
-```{r}
+```{r, eval = FALSE}
 files = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves") %>% 
   str_subset(pattern = "Period")
 
@@ -424,7 +427,7 @@ for (i in 1:length(files)){
 
 Now, let's convert our datasets into XYZ format so they're easier to work with in a spatial setting.
 
-```{r}
+```{r, eval = FALSE}
 #Grab Lat and Long data from original netcdf. These are in a worldwide projection EPSG4326.
 data = nc_open("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/MeanWaveDirection/ww3.hindcast_1981_dir.nc") #Just an example nc, they all have identical dimensions
 latitude = ncvar_get(data, "latitude") #%>% data.frame() %>% rename(latitude = names(.)[1])
@@ -490,7 +493,7 @@ Shout out to Dr Alex Shute for handling the data export for these variables.
 
 Generally we can take the same steps as we did above for each of the wave variables. We want the mean and SD annually and the summer mean, sd, and 95th percentile.
 
-```{r}
+```{r, eval = FALSE}
 #Investigate the netcdfs first
 directoriesList = c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Temperature")
 
@@ -577,7 +580,7 @@ saveRDS(Summer95thHolder,
 
 Like we did for the wave data, let's now change our data into an XYZ format. This will make things easier for our interpolations.
 
-```{r}
+```{r, eval = FALSE}
 #Grab Lat and Long data from original netcdf. These are in a worldwide projection EPSG4326.
 data = nc_open("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Temperature/noaa_sst_masked_southeast_aus.nc")
 latitude = data$dim$lat$vals #%>% data.frame() %>% rename(latitude = names(.)[1])
@@ -630,34 +633,141 @@ for (j in 1:length(files)) {
 ```
 
 
-### 4) Interpolations
+### 4) Response Data Wrangling.
+
+Before we can interpolate these data we need to know where our response data are, both in space and in time. There is no point interpolating data for years we dont need as this will just burn time.
+
+First we need to get the response data organised into a format HMSC will take.
+
+```{r}
+#Import data and bin off any rows where the RSL gang didnt see a single species of teh focal taxanomic group
+fishRaw = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Unwrangled/ep_m1_fish_victoria.csv") %>% 
+    filter(!str_detect(recorded_species_name, pattern = "No species found")) 
+  
+invertRaw = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Unwrangled/ep_m2_inverts_victoria.csv") %>% 
+    filter(!str_detect(recorded_species_name, pattern = "No species found")) 
+
+#Structure of both
+str(fishRaw)
+str(invertsRaw)
+
+#Wrangle. Sum of each species in each transect, in each site, during each year, pivoted so cols are on the vertical.
+fishLatLon = fishRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")) %>% 
+  dplyr::select(site_code, site_name, location, latitude, longitude, year, survey_date) %>% 
+  group_by(site_name, site_code, year, survey_date, location) %>% 
+  summarise(latitude = mean(latitude, na.rm = TRUE),
+            longitude = mean(longitude, na.rm = TRUE)) %>% 
+  ungroup()
+
+#Check each site has a unique lat long. Suggests two sites have different site IDs but identical lat longs.
+temp = fishLatLon %>% 
+  group_by(site_code) %>% 
+  summarise(longitude = mean(longitude, na.rn = TRUE),
+            latitude = mean(latitude, na.rm = TRUE)) %>% 
+  st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326")
+
+length(unique(temp$site_code)) #188
+length(unique(temp$geometry)) #187
+
+#Find duplicated geom
+distinct = dplyr::distinct(temp, geometry, .keep_all = TRUE)
+dupedGeom = temp[!(temp$site_code %in% distinct$site_code),]
+
+#Find all rows with this geom
+identified = temp[temp$geometry == dupedGeom$geometry,] #PPB25 and PPB8 have identical lat longs. Looking at the data these are called St Leonards and St Leonards rock wall. 
+
+#Repeat for inverts
+#Wrangle. Sum of each species in each transect, in each site, during each year, pivoted so cols are on the vertical.
+invertLatLon = invertRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")) %>% 
+  dplyr::select(site_code, site_name, location, latitude, longitude, year, survey_date) %>% 
+  group_by(site_name, site_code, year, survey_date, location) %>% 
+  summarise(latitude = mean(latitude, na.rm = TRUE),
+            longitude = mean(longitude, na.rm = TRUE)) %>% 
+  ungroup()
+
+#Check each site has a unique lat long. Suggests two sites have different site IDs but identical lat longs.
+temp = invertLatLon %>% 
+  group_by(site_code) %>% 
+  summarise(longitude = mean(longitude, na.rn = TRUE),
+            latitude = mean(latitude, na.rm = TRUE)) %>% 
+  st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326")
+
+length(unique(temp$site_code)) #187
+length(unique(temp$geometry)) #186
+
+#Find duplicated geom
+distinct = dplyr::distinct(temp, geometry, .keep_all = TRUE)
+dupedGeom = temp[!(temp$site_code %in% distinct$site_code),]
+
+#Find all rows with this geom
+identified = temp[temp$geometry == dupedGeom$geometry,] #PPB25 and PPB8 have identical geoms. Same sites as above.
+
+
+########### How do we remedy this? ####################
+
+
+#Now compute the occurrence matrix for fish then inverts
+
+fishCounts = fishRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")) %>% 
+  dplyr::select(site_code, site_name, location, year, survey_date, reporting_name, total) %>% 
+  group_by(site_name, site_code, survey_date, year, location, reporting_name) %>% 
+  summarise(count = sum(total, na.rm = TRUE)) %>% 
+  pivot_wider(id_cols = c("site_name", "site_code", "survey_date", "location", "year"),
+              names_from = "reporting_name",
+              values_from = "count",
+              values_fill = 0)
+
+invertCounts = invertRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")) %>% 
+  dplyr::select(site_code, site_name, location, year, survey_date, reporting_name, total) %>% 
+  group_by(site_name, site_code, survey_date, year, location, reporting_name) %>% 
+  summarise(count = sum(total, na.rm = TRUE)) %>% 
+  pivot_wider(id_cols = c("site_name", "site_code", "survey_date", "location", "year"),
+              names_from = "reporting_name",
+              values_from = "count",
+              values_fill = 0)
+
+
+#Combine datasets and export now wrangled
+fishMaster = full_join(fishLatLon, fishCounts)
+invertMaster = full_join(invertLatLon, invertCounts)
+
+write.csv(fishMaster,
+          "Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/fishMaster.csv")
+
+write.csv(invertMaster,
+          "Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/invertMaster.csv")
+
+```
+
+
+### 5) Interpolations
 
 Now we need to interpolate the results of the temperature and wave data arrays to the template raster. 
 
-First off, not all the years we have predictor data for are actually in our response data. Let's import the resposne data and muck around wtih it.
+First off, not all the years we have predictor data for are actually in our response data. Let's import the response data and muck around with it.
 
 ```{r}
 #Import fish and invert response data
-fishData = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/CoarseLatLon/Final_Fish_AbundanceMatrix.csv")
-invertData = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/CoarseLatLon/Final_Inverts_AbundanceMatrix.csv")
+fishData = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/fishMaster.csv")
+invertData = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/invertMaster.csv")
 
 #Some of our datapoints are outside of our focal polygon. Drop em.
 coastlinePoly = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VIC_coastalwaters_mask.shp") %>% st_transform(crs = "EPSG:7899")
 
-fishDataSf = fishData %>% st_as_sf(coords = c("Longitude", "Latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly)
+fishDataSf = fishData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly)
 
-invertDataSf = invertData %>% st_as_sf(coords = c("Longitude", "Latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly)
+invertDataSf = invertData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly)
 
 #How many rows did we drop from each dataset?
 print(nrow(fishData) - nrow(fishDataSf))
 print(nrow(invertData) - nrow(invertDataSf))
 
 #Years present in each dataset
-setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/CoarseLatLon/")
-fishYears = fishDataSf$Year %>% unique()
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/")
+fishYears = fishDataSf$survey_date %>% as.Date() %>% format("%Y") %>% unique()
 fishYears %>% saveRDS("fishYears")
-invertYears = invertDataSf$Year %>% unique()
-fishYears %>% saveRDS("fishYears")
+invertYears = fishDataSf$survey_date %>% as.Date() %>% format("%Y") %>% unique()
+invertYears %>% saveRDS("invertYears")
 
 #Do fish years match the invert years?
 fishYears == invertYears #Yep all match
