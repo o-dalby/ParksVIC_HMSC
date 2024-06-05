@@ -31,6 +31,8 @@ library(ncdf4)
 library(INLA)
 library(raster)
 library(tictoc)
+library(GVI) #Needs installing using github remote installation as package not on cran at time of writing
+library(BalancedSampling)
 ```
 
 ### 1) Bathymetry and terrain derivatives
@@ -445,7 +447,7 @@ XYsf = data.frame(longitude = longitude,
 
 #Import the data we wish to interpolate.
 directoriesList = "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/"
-files = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves")
+files = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves") %>% str_subset(pattern = "XYZ", negate = TRUE)
 yearsAnnual = seq(1992, 2020)
 
 #Loop through each layer of the array and add the years data as a separate column
@@ -560,7 +562,7 @@ for (i in 1:(dim(summerArray)[3]/3)){ #Dividing by 3 gives us the number of summ
   
   SummerMeanHolder[, , i] = apply(subset, MARGIN = c(1,2), FUN = "mean", na.rm = TRUE) #Calc mean and store in ith layer
   SummerSDHolder[, , i] = apply(subset, MARGIN = c(1,2), FUN = "sd", na.rm = TRUE) #Calc se and store in ith layer
-  SummerSDHolder[, , i] = apply(subset, MARGIN = c(1,2), FUN = "quantile", na.rm = TRUE, probs = c(0.95)) #Calc se and store in ith layer
+  Summer95thHolder[, , i] = apply(subset, MARGIN = c(1,2), FUN = "quantile", na.rm = TRUE, probs = c(0.95)) #Calc se and store in ith layer
 
 }
 
@@ -598,7 +600,7 @@ XYsf = base::expand.grid(longitude, latitude) %>%
 
 #Import the data we wish to interpolate.
 directoriesList = "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/"
-files = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature")
+files = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature") %>% str_subset(pattern = "XYZ", negate = TRUE)
 yearsAnnual = seq(1981, 2024)
 
 #Loop through each layer of the array and add the years data as a separate column
@@ -640,7 +642,7 @@ Before we can interpolate these data we need to know where our response data are
 First we need to get the response data organised into a format HMSC will take.
 
 ```{r}
-#Import data and bin off any rows where the RSL gang didnt see a single species of teh focal taxanomic group
+#Import data and bin off any rows where the RSL gang didnt see a single species of the focal taxanomic group
 fishRaw = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Unwrangled/ep_m1_fish_victoria.csv") %>% 
     filter(!str_detect(recorded_species_name, pattern = "No species found")) 
   
@@ -649,7 +651,7 @@ invertRaw = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Unwrangled/
 
 #Structure of both
 str(fishRaw)
-str(invertsRaw)
+str(invertRaw)
 
 #Wrangle. Sum of each species in each transect, in each site, during each year, pivoted so cols are on the vertical.
 fishLatLon = fishRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")) %>% 
@@ -702,10 +704,6 @@ dupedGeom = temp[!(temp$site_code %in% distinct$site_code),]
 #Find all rows with this geom
 identified = temp[temp$geometry == dupedGeom$geometry,] #PPB25 and PPB8 have identical geoms. Same sites as above.
 
-
-########### How do we remedy this? ####################
-
-
 #Now compute the occurrence matrix for fish then inverts
 
 fishCounts = fishRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")) %>% 
@@ -715,7 +713,8 @@ fishCounts = fishRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")) %>
   pivot_wider(id_cols = c("site_name", "site_code", "survey_date", "location", "year"),
               names_from = "reporting_name",
               values_from = "count",
-              values_fill = 0)
+              values_fill = 0) %>% 
+  dplyr::filter(!site_code == "PPB8") #Drop suspicious st leonards data
 
 invertCounts = invertRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")) %>% 
   dplyr::select(site_code, site_name, location, year, survey_date, reporting_name, total) %>% 
@@ -724,7 +723,8 @@ invertCounts = invertRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")
   pivot_wider(id_cols = c("site_name", "site_code", "survey_date", "location", "year"),
               names_from = "reporting_name",
               values_from = "count",
-              values_fill = 0)
+              values_fill = 0) %>% 
+  dplyr::filter(!site_code == "PPB8") #Drop suspicious st leonards data
 
 
 #Combine datasets and export now wrangled
@@ -754,9 +754,11 @@ invertData = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/i
 #Some of our datapoints are outside of our focal polygon. Drop em.
 coastlinePoly = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VIC_coastalwaters_mask.shp") %>% st_transform(crs = "EPSG:7899")
 
-fishDataSf = fishData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly)
+fishDataSf = fishData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly) %>% 
+  dplyr::select(-c("FID_cw_sta", "FEATURE", "REL_DATE", "FID_vic25_", "TYPE2", "COUNT", "FIRST_FEAT", "Area"))
 
-invertDataSf = invertData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly)
+invertDataSf = invertData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly) %>% 
+  dplyr::select(-c("FID_cw_sta", "FEATURE", "REL_DATE", "FID_vic25_", "TYPE2", "COUNT", "FIRST_FEAT", "Area"))
 
 #How many rows did we drop from each dataset?
 print(nrow(fishData) - nrow(fishDataSf))
@@ -774,11 +776,283 @@ fishYears == invertYears #Yep all match
 
 ```
 
+Beginning interpolations using IDW. We have a gridded dataset for each variable (either from the satellite derived temp or from a fine scale variable grid for the waves). So, the IDW algorithm is a tolerable choice. In later parts of the project we might use INLA.
+
+Begin with temperature.
+
+```{r}
+#Import the bathymetry layer we are using as our template for xys we want to interpolate onto
+templateRast = rast("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VICBathy50mMean.tif")
+
+#Make polygon version of the bathymetry
+templatePoly = templateRast %>% ext() %>% as.polygons(crs = "EPSG:7899") %>% st_as_sf()
+
+#Remember!!! The temperature data begin in WGS84 as they come from a global dataset.
+variableList = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature") %>% 
+  str_subset(pattern = "XYZ", negate = TRUE) #Keep only those without. Five temperature measures to work through.
+
+focalYears = readRDS("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/CoarseLatLon/fishYears") %>% as.character()
+
+for (j in 1:length(variableList)){
+  
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature")
+
+  filesList = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature") %>% 
+                          str_subset(string = ., pattern = "XYZ", negate = FALSE)
+  
+  print(str_c("Working on ", filesList[j]))
+  
+  ToInterpolate = readRDS(filesList[j]) %>% dplyr::select(c(longitude, latitude, any_of(focalYears))) %>%  #Read in jth file and drop any columns we dont have animal data for
+  st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% 
+    st_transform(crs = "EPSG:7899")
+  
+for (i in 1:(ncol(ToInterpolate)-1)){ #Skip last col as it's geometry
+ 
+  print(str_c("Interpolating ", names(ToInterpolate)[i], " Data"))
+  
+  temp = sf_to_rast(observer = ToInterpolate[,i] %>% na.omit(),
+                    v = names(ToInterpolate)[i],
+                    aoi = templatePoly,
+                    beta = 2,
+                    raster_res = 50,
+                    cores = 20,
+                    progress = TRUE) #Compute IDW. All points allowed to inform prediction of all other points. Temp data so coarse and effective spatial range so large that this is sensible. Using 20 cores to make things as fast as possible. Machine has 24.
+  
+  crs(temp) = crs(templateRast) #Reassign crs
+  
+  names(temp) = str_c(filesList[j] %>% str_replace(pattern = "XYZ", replacement = ""),
+                      names(ToInterpolate)[i])
+  
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Rasters")
+
+  temp = temp %>% mask(templateRast,
+                       filename = str_c(names(temp),"Rast.tif"),
+                       overwrite = TRUE)
+  rm(temp)
+   
+}
+  
+}
+
+```
+
+Repeat for wave data. Takes multiple days!
+
+```{r}
+#Import the bathymetry layer we are using as our template for xys we want to interpolate onto
+templateRast = rast("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VICBathy50mMean.tif")
+
+#Make polygon version of the bathymetry
+templatePoly = templateRast %>% ext() %>% as.polygons(crs = "EPSG:7899") %>% st_as_sf()
+
+#Make another one of just the area we are focussing in. Not it's extent.
+templatePolyCoastal = templateRast %>% as.polygons(crs = "EPSG:7899") %>% st_as_sf()
+
+#Remember!!! The data begin in WGS84 as they come from a global dataset.
+variableList = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves") %>% 
+  str_subset(pattern = "XYZ", negate = TRUE) %>% 
+  str_subset(string = ., pattern = "Signif", negate = FALSE) #Keep only those without. 35 wave measures to work through. But see note a few lines down.
+
+###NOTE - DUE TO THE CONSIDERABLE TIME TAKEN TO INTERPOLATE THESE DATA AND THE TIGHT TURN AROUNDS FOR THE PROJECT WE ONLY EXTRACT SIGNIF WAVE HEIGHT AS A FOCAL VARIABLE RIGHT NOW ###
+
+focalYears = readRDS("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/CoarseLatLon/fishYears") %>% as.character()
+
+#There are lots of wave data so we need to trim the data we import down to prevent computer crashing when we interpolate. Doing this outside the loops.
+#Makes a list of rows that are NA where the point falls outside of the polygon.
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves")
+
+filesList = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves") %>% 
+                          str_subset(string = ., pattern = "XYZ", negate = FALSE)
+
+InsideCoastline = readRDS(filesList[1]) %>% dplyr::select(c(longitude, latitude, any_of(focalYears))) %>%  #Read in jth file and drop any columns we dont have animal data for
+  st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% 
+    st_transform(crs = "EPSG:7899") %>% 
+    vect() %>% 
+    terra::extract(y = ., x = templateRast, ID = FALSE)
+
+for (j in 1:length(variableList)){
+  
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves")
+
+  filesList = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves") %>% 
+                          str_subset(string = ., pattern = "XYZ", negate = FALSE) %>% 
+                          str_subset(string = ., pattern = "Signif", negate = FALSE) 
+  
+  print(str_c("Working on ", filesList[j]))
+  
+  ToInterpolate = readRDS(filesList[j]) %>% dplyr::select(c(longitude, latitude, any_of(focalYears))) %>%  #Read in jth file and drop any columns we dont have animal data for
+  st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% 
+    st_transform(crs = "EPSG:7899")
+  
+  ToInterpolate = ToInterpolate[!is.na(InsideCoastline),] #Drop rows outside of focal polygon.
+  
+  #Point count is still super high for the time we have to interpolate. Let's subset with a spatially balanced approach to 30%.
+  set.seed(1995) #Standardise subsampling randomness
+  N = nrow(ToInterpolate)
+  n = N/3
+  p = rep(n/N,N) #Uniform inclprobs
+  x = matrix(runif(N * 2), ncol = 2);
+  s = cube(p, x)
+  
+  ToInterpolate = ToInterpolate[s,] #Select subsetted rows
+  
+  names(ToInterpolate) = names(ToInterpolate) %>% str_replace(pattern = "X", replacement = "") #SF introduced X's to variable names (1998 becomes X1998) because technically a numerical col name is hard to work with. Change this back to what we want.
+  
+for (i in 1:(ncol(ToInterpolate)-1)){ #Skip last col as it's geometry
+ 
+  print(str_c("Interpolating ", names(ToInterpolate)[i], " Data"))
+  
+  temp = sf_to_rast(observer = ToInterpolate[,i] %>% na.omit(),
+                    v = names(ToInterpolate)[i],
+                    aoi = templatePoly,
+                    n = 12,
+                    beta = 2,
+                    raster_res = 50,
+                    cores = 20,
+                    progress = TRUE) #Compute IDW. Only the nearest 12 neighbours are used to calculate the prediction of a given cell. Stop all 20-30k points from being used to derive one cell value. Let R get at 20 cores to speed things up.
+  
+  crs(temp) = crs(templateRast) #Reassign crs
+  
+  names(temp) = str_c(filesList[j] %>% str_replace(pattern = "XYZ", replacement = ""),
+                      names(ToInterpolate)[i])
+  
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Rasters")
+
+  temp = temp %>% mask(templateRast,
+                       filename = str_c(names(temp),"Rast.tif"),
+                       overwrite = TRUE)
+  rm(temp)
+   
+}
+  
+}
+
+
+
+
+
+```
+
+### 6) Form modelling dataset
+
+Now that we have the predictor data interpolated we can begin to form our dataset for model fitting. We want to get the following data in there as character classes that can eventually become factors.
+
+- Whether the point is within an MPA or is an associated reference site
+- What MPA site is the data point associated with (we have reference data on the edge of some MPAs that are used for)
+
+```{r}
+#Import fish and invert response data
+fishData = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/fishMaster.csv")
+invertData = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/invertMaster.csv")
+
+#Import same raster to use as template
+templateRast = rast("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VICBathy50mMean.tif")
+
+#Some of our datapoints are outside of our focal polygon. Drop em.
+coastlinePoly = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VIC_coastalwaters_mask.shp") %>% st_transform(crs = "EPSG:7899")
+
+fishDataSf = fishData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly) %>% 
+  dplyr::select(-c("FID_cw_sta", "FEATURE", "REL_DATE", "FID_vic25_", "TYPE2", "COUNT", "FIRST_FEAT", "Area"))
+
+invertDataSf = invertData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly) %>% 
+  dplyr::select(-c("FID_cw_sta", "FEATURE", "REL_DATE", "FID_vic25_", "TYPE2", "COUNT", "FIRST_FEAT", "Area"))
+
+#Add in IMCRA bioregion - polygon derived from one that is publically available, needs a bit of mucking around with to match our template raster.
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Rasters")
+imcraRast =  st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/CBiCs/Integrated_Marine_and_Coastal_Regionalisation_of_Australia_(IMCRA)_v4.0_-_Provincial_Bioregions.shp") %>% 
+  st_transform(crs = "EPSG:7899") %>%
+  vect() %>% 
+  terra::rasterize(templateRast, field = "PB_NAME") #Only gives cell values where the polygons were
+
+tempRast = focal(imcraRast, w = 9, fun = "modal", na.policy = "only") #Window size corresponds to ~450m. Far enough to make sure we get data for where the polygon ends abruptly but not huge enough to give wonky values. 
+tempRast[is.na(templateRast)] = NA #Any NAs in template rast remain NAs here
+levels(tempRast) = terra::levels(imcraRast) #Re-assign levels
+imcraRast = tempRast #Swap objects back over
+names(imcraRast) = "Bioregion"
+rm(tempRast)
+writeRaster(imcraRast, "imcraRast.tif", overwrite = TRUE) #Export
+
+#Add column to dataframes
+fishDataSf = terra::extract(x = imcraRast,
+                      y = fishDataSf %>% vect(),
+                      bind = TRUE) %>%
+  st_as_sf()
+
+invertDataSf = terra::extract(x = imcraRast,
+                      y = invertDataSf %>% vect(),
+                      bind = TRUE) %>%
+  st_as_sf()
+
+
+
+#Add in whether the name of the MPA the point lands in, if it does so. MPA layer is also crude around edges as it's based on the IMCRA polygon. Same approach applied.
+######### This is something we need to clear up in the meeting with parks... how to we predict named regions in the future that arent MPA boundaries? #############
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Rasters")
+mpaStatusRast = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/CBiCs/VEAC_CBiCS_classification_VIC.shp") %>% 
+  st_transform(crs = "EPSG:7899") %>%  
+  vect() %>% 
+  terra::rasterize(templateRast, field = "MPA_status") #Only gives cell values where the polygons were
+
+tempRast = focal(mpaStatusRast,  w = 9, fun = "modal", na.policy = "only") #Window size corresponds to ~450m. Far enough to make sure we get data for where the polygon ends abruptly but not huge enough to give wonky values. 
+tempRast[is.na(templateRast)] = NA #Any NAs in template rast remain NAs here
+levels(tempRast) = terra::levels(mpaStatusRast) #Re-assign levels
+mpaStatusRast = tempRast #Swap objects back over
+names(mpaStatusRast) = "MPAName"
+rm(tempRast)
+writeRaster(mpaStatusRast, "mpaRast.tif", overwrite = TRUE) #Export
+
+#Add column to dataframes
+fishDataSf = terra::extract(x = mpaStatusRast,
+                      y = fishDataSf %>% vect(),
+                      bind = TRUE) %>%
+  st_as_sf()
+
+invertDataSf = terra::extract(x = mpaStatusRast,
+                      y = invertDataSf %>% vect(),
+                      bind = TRUE) %>%
+  st_as_sf()
+
+#Finally we can muck around with another class denoting whether a site is protected or not based on whether a named MPA was found earlier.
+#Make raster predictor and export
+protectRast = mpaStatusRast
+protectRast[!is.na(protectRast) & protectRast == 16] = 0 #0 = unprotected
+protectRast[!is.na(protectRast) & protectRast != 0] = 1 #1 = protected
+levels(protectRast) = data.frame(ID = c(0,1),
+                                 ProtectionStatus = c("Unprotected", "Protected"))
+
+names(protectRast) = "MPA Protection Status"
+
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Rasters")
+writeRaster(protectRast, "mpaProtectionRast.tif", overwrite = TRUE) #Export
+
+#Add to sf dfs
+fishDataSf = terra::extract(x = protectRast,
+                      y = fishDataSf %>% vect(),
+                      bind = TRUE) %>%
+  st_as_sf()
+
+invertDataSf = terra::extract(x = protectRast,
+                      y = invertDataSf %>% vect(),
+                      bind = TRUE) %>%
+  st_as_sf()
+
+
+```
+
+That's the MPA stuff sorted...for now. Let's move on to the simpler albeit fiddly task of extracting each year of temperature and wave data and linking it to each fish and invert community.
+
+
+
+
+
+### OLD CODE - INLA INTERPALATIONS
+
+
 Beginning with temperature data as it's the smaller set of data. The inla process can be quite complex....be warned.
 
 Setting up the mesh we need by first importing and setting up the target raster grid and the boundary we'll use. These components are the same across all the variables and timesteps we want to interpolate.
 
-```{r}
+```{r, eval = FALSE}
 #Guidance from this link
 #https://rpubs.com/jafet089/886687
 #Another excellent INLA resource
@@ -801,7 +1075,7 @@ Now we have that done we can work with the data to be interpolated. This will va
 
 Working with temperature data first. The data (temp vs waves) are on different projections at present so we'll split the interpolations into two loops.
 
-```{r}
+```{r, eval = FALSE}
 #Calculate the maximum edge length across the data we wish to interpolate (the wave/temp data). Initial guestimate based on the guidance from the links mentioned above.
 #Doing this with the first temperature layer as the spatial points are the same between years.
 
