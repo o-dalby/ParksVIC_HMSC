@@ -138,15 +138,46 @@ hist(rowSums(fishY>0), main = "Richness") #Most samples have moderate species ri
 
 hist(colMeans(invertY), nclass = 20, main = "Mean Abun per sample unit") #Most invert species are hardly present on average, some have increased abundance to ~30 on average across sample units then some a handful (1-2) are comparatively super common. Up to 80-100 individuals per sample unit. 
 hist(colMeans(invertY>0), nclass = 10, main = "Prevalence") #Most inverts have <0.2 prevalence. Then a few more have 0.2-0.3. Beyond which it really drops off in frequency to the higher prevalence. Generally very few species are strongly prevalent.
-hist(log(invertY[invertY>0]), main = "log abundance conditional on presence")
+hist(log(invertY[invertY>0]), main = "log abundance conditional on presence") #As with fish there is still strong negative skew. Better than untransformed though.
 hist(rowSums(invertY>0), main = "Richness") #Most samples have moderate species richness ~12 inverts per sample. Slight skew to lower richnesses but pretty normal.
-
 
 
 ```
 
+From the above we can see that both our fish and invert data have strongly positively skewed abundances (lean towards loads of 0s and few high abundances). Looks like we may need a hurdle model so that HMSC can model the presence as one component, then where the species is present we can build another model to predict the abundances.
+
+### BEGIN HERE!!!!!!!!!!!!!!!!!!!!!!
+
 Extract S matrix - Study design aspects.
 
+```{r}
+fishS = fishData[,c(1,3,6,7,8,9)] #Grab site name, sampling, year, imcra bioregion, MPA protection status (protected or not?), the MPA name the points are associated with, and the broader geographic region as study design components
+
+invertS = invertData[, c(1,3,6,7,8,9)] #As above
+
+#These are all factor variables
+```
+
+Finally we can make some random effect variables.
+
+```{r}
+fishXY = as.matrix(cbind(fishData$longitude, fishData$latitude))
+rownames(xy)= S$SampleID
+colnames(xy)=c("x-coordinate","y-coordinate")
+
+rL.nngp <- HmscRandomLevel(sData = xy, longlat = FALSE, sMethod = 'NNGP',nNeighbours = 10)
+rL.nngp <- setPriors(rL.nngp,nfMin=1,nfMax=1)
+
+#rL.strata <- HmscRandomLevel(units = levels(studyDesign$strata))
+
+#Add year as random effect. Helps account for temporal autocorrelation.
+rL.fish.dyear <- HmscRandomLevel(units = levels(fishS$year))
+rL.invert.dyear <- HmscRandomLevel(units = levels(invertS$year))
+
+
+
+
+```
 
 
 
