@@ -727,8 +727,8 @@ invertCounts = invertRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")
 
 
 #Combine datasets and export now wrangled
-fishMaster = full_join(fishLatLon, fishCounts)
-invertMaster = full_join(invertLatLon, invertCounts)
+fishMaster = full_join(fishLatLon, fishCounts) %>% na.omit() #Drop pesky PPB8 site as the lat long was still in the first dataset joined
+invertMaster = full_join(invertLatLon, invertCounts) %>% na.omit()
 
 write.csv(fishMaster,
           "Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/fishMaster.csv")
@@ -760,8 +760,8 @@ invertDataSf = invertData %>% st_as_sf(coords = c("longitude", "latitude"), crs 
   dplyr::select(-c("FID_cw_sta", "FEATURE", "REL_DATE", "FID_vic25_", "TYPE2", "COUNT", "FIRST_FEAT", "Area"))
 
 #How many rows did we drop from each dataset?
-print(nrow(fishData) - nrow(fishDataSf))
-print(nrow(invertData) - nrow(invertDataSf))
+print(nrow(fishData) - nrow(fishDataSf)) #36
+print(nrow(invertData) - nrow(invertDataSf)) #35
 
 #Years present in each dataset
 setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/")
@@ -1087,7 +1087,7 @@ for (i in years){
     dplyr::select(1,2,3,4,5,263,264,265,266,277,278,267:276,253:262,6:253) #Reorder columns to something logical
   
   #Append to relevant year of invert data. i-2009 converts our active year to 1, 2, 3 etc  
-  invertlist[[i-1997]] = fishDataSf %>% filter(year == i) %>% 
+  invertlist[[i-1997]] = invertDataSf %>% filter(year == i) %>% 
     vect() %>% 
     terra::extract(y = .,
                    x = stack,
@@ -1097,7 +1097,7 @@ for (i in years){
            latitude = st_coordinates(.)[,2]) %>% 
     st_drop_geometry() %>% 
     dplyr::select(-c(X,)) %>% 
-    dplyr::select(1,2,3,4,5,263,264,265,266,277,278,267:276,253:262,6:253) #Reorder columns to something logical
+    dplyr::select(1,2,3,4,5,268,269,270,271,282,283,272:281,258:267,6:258) #Reorder columns to something logical
   
   
 }
@@ -1106,8 +1106,8 @@ fishData = do.call(rbind, fishlist)
 invertData = do.call(rbind, invertlist)
 
 setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/Modelling/ResponseCSVs")
-write.csv(fishData, "fishDataFinal.csv")
-write.csv(invertData, "invertDataFinal.csv")
+write.csv(fishData, "fishDataFinal.csv", row.names = FALSE)
+write.csv(invertData, "invertDataFinal.csv", row.names = FALSE)
 
 
 
