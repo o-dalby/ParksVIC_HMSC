@@ -30,7 +30,6 @@ library(tidyverse)
 library(ncdf4)
 library(INLA)
 library(raster)
-library(tictoc)
 library(GVI) #Needs installing using github remote installation as package not on cran at time of writing
 library(BalancedSampling)
 ```
@@ -939,27 +938,17 @@ Now that we have the predictor data interpolated we can begin to form our datase
 
 - Whether the point is within an MPA or is an associated reference site
 - What MPA site is the data point associated with (we have reference data on the edge of some MPAs that are used for)
+- An indicator of the geographic region the point is in
+- IMCRA bioregions
+
+First, we need raster data for all of these.
 
 ```{r}
-#Import fish and invert response data
-fishData = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/fishMaster.csv")
-invertData = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/invertMaster.csv")
-
-#Import same raster to use as template
+#Add in IMCRA bioregion - polygon derived from one that is publically available, needs a bit of mucking around with to match our template raster.
 templateRast = rast("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VICBathy50mMean.tif")
 
-#Some of our datapoints are outside of our focal polygon. Drop em.
-coastlinePoly = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VIC_coastalwaters_mask.shp") %>% st_transform(crs = "EPSG:7899")
-
-fishDataSf = fishData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly) %>% 
-  dplyr::select(-c("FID_cw_sta", "FEATURE", "REL_DATE", "FID_vic25_", "TYPE2", "COUNT", "FIRST_FEAT", "Area"))
-
-invertDataSf = invertData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly) %>% 
-  dplyr::select(-c("FID_cw_sta", "FEATURE", "REL_DATE", "FID_vic25_", "TYPE2", "COUNT", "FIRST_FEAT", "Area"))
-
-#Add in IMCRA bioregion - polygon derived from one that is publically available, needs a bit of mucking around with to match our template raster.
-setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Rasters")
-imcraRast =  st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/CBiCs/Integrated_Marine_and_Coastal_Regionalisation_of_Australia_(IMCRA)_v4.0_-_Provincial_Bioregions.shp") %>% 
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/EcologicalClassifications")
+imcraRast =  st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/EcologicalClassifications/Integrated_Marine_and_Coastal_Regionalisation_of_Australia_(IMCRA)_v4.0_-_Provincial_Bioregions.shp") %>% 
   st_transform(crs = "EPSG:7899") %>%
   vect() %>% 
   terra::rasterize(templateRast, field = "PB_NAME") #Only gives cell values where the polygons were
@@ -972,23 +961,10 @@ names(imcraRast) = "Bioregion"
 rm(tempRast)
 writeRaster(imcraRast, "imcraRast.tif", overwrite = TRUE) #Export
 
-#Add column to dataframes
-fishDataSf = terra::extract(x = imcraRast,
-                      y = fishDataSf %>% vect(),
-                      bind = TRUE) %>%
-  st_as_sf()
-
-invertDataSf = terra::extract(x = imcraRast,
-                      y = invertDataSf %>% vect(),
-                      bind = TRUE) %>%
-  st_as_sf()
-
-
-
 #Add in whether the name of the MPA the point lands in, if it does so. MPA layer is also crude around edges as it's based on the IMCRA polygon. Same approach applied.
 ######### This is something we need to clear up in the meeting with parks... how to we predict named regions in the future that arent MPA boundaries? #############
-setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Rasters")
-mpaStatusRast = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/CBiCs/VEAC_CBiCS_classification_VIC.shp") %>% 
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/EcologicalClassifications")
+mpaStatusRast = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/EcologicalClassifications/VEAC_CBiCS_classification_VIC.shp") %>% 
   st_transform(crs = "EPSG:7899") %>%  
   vect() %>% 
   terra::rasterize(templateRast, field = "MPA_status") #Only gives cell values where the polygons were
@@ -1001,16 +977,20 @@ names(mpaStatusRast) = "MPAName"
 rm(tempRast)
 writeRaster(mpaStatusRast, "mpaRast.tif", overwrite = TRUE) #Export
 
-#Add column to dataframes
-fishDataSf = terra::extract(x = mpaStatusRast,
-                      y = fishDataSf %>% vect(),
-                      bind = TRUE) %>%
-  st_as_sf()
+#Repeat but this time we get the broad region of each polygon (Level 6 Cbics specifically). These are essentially a polygon of the zone the data belong to (PPB, Cape Conran, etc).
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/EcologicalClassifications")
+regionRast = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/EcologicalClassifications/VEAC_CBiCS_classification_VIC.shp") %>% 
+  st_transform(crs = "EPSG:7899") %>%  
+  vect() %>% 
+  terra::rasterize(templateRast, field = "Level_6") #Only gives cell values where the polygons were
 
-invertDataSf = terra::extract(x = mpaStatusRast,
-                      y = invertDataSf %>% vect(),
-                      bind = TRUE) %>%
-  st_as_sf()
+tempRast = focal(regionRast,  w = 9, fun = "modal", na.policy = "only") #Window size corresponds to ~450m. Far enough to make sure we get data for where the polygon ends abruptly but not huge enough to give wonky values. 
+tempRast[is.na(templateRast)] = NA #Any NAs in template rast remain NAs here
+levels(tempRast) = terra::levels(regionRast) #Re-assign levels
+regionRast = tempRast #Swap objects back over
+names(regionRast) = "Region"
+rm(tempRast)
+writeRaster(regionRast, "regionRast.tif", overwrite = TRUE) #Export
 
 #Finally we can muck around with another class denoting whether a site is protected or not based on whether a named MPA was found earlier.
 #Make raster predictor and export
@@ -1020,28 +1000,119 @@ protectRast[!is.na(protectRast) & protectRast != 0] = 1 #1 = protected
 levels(protectRast) = data.frame(ID = c(0,1),
                                  ProtectionStatus = c("Unprotected", "Protected"))
 
-names(protectRast) = "MPA Protection Status"
+names(protectRast) = "MPAProtectStat"
 
-setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Rasters")
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/EcologicalClassifications")
 writeRaster(protectRast, "mpaProtectionRast.tif", overwrite = TRUE) #Export
 
-#Add to sf dfs
-fishDataSf = terra::extract(x = protectRast,
-                      y = fishDataSf %>% vect(),
-                      bind = TRUE) %>%
-  st_as_sf()
-
-invertDataSf = terra::extract(x = protectRast,
-                      y = invertDataSf %>% vect(),
-                      bind = TRUE) %>%
-  st_as_sf()
 
 
 ```
+Now we can make stacked rasters which correspond to each year of data. These will be very useful for future modelling and prediction.
 
-That's the MPA stuff sorted...for now. Let's move on to the simpler albeit fiddly task of extracting each year of temperature and wave data and linking it to each fish and invert community.
+We can then ammend the data to the associated year-specifc rows in the fish and invert datasets.
+
+```{r}
+#Here we loop again, extracting a given year of either fish or invert data, finding the temperature and wave data from that year, then extracting using terra, finally we recompile the data.
+
+#Import fish and invert response data
+fishData = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/fishMaster.csv")
+invertData = read.csv("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/Wrangled/invertMaster.csv")
+
+#Some of our datapoints are outside of our focal polygon. Drop em.
+coastlinePoly = st_read("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry/VIC_coastalwaters_mask.shp") %>% st_transform(crs = "EPSG:7899")
+
+fishDataSf = fishData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly) %>% 
+  dplyr::select(-c("FID_cw_sta", "FEATURE", "REL_DATE", "FID_vic25_", "TYPE2", "COUNT", "FIRST_FEAT", "Area"))
+
+invertDataSf = invertData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") %>% st_intersection(coastlinePoly) %>% 
+  dplyr::select(-c("FID_cw_sta", "FEATURE", "REL_DATE", "FID_vic25_", "TYPE2", "COUNT", "FIRST_FEAT", "Area"))
+
+#How many rows did we drop from each dataset?
+print(nrow(fishData) - nrow(fishDataSf))
+print(nrow(invertData) - nrow(invertDataSf))
+
+#Note we only have wave data up until 2020 so lets drop any fish data beyond this
+fishDataSf = fishDataSf %>% filter(year %in% seq(1998, 2020))
+
+#And repeat for invert data
+invertDataSf = invertDataSf %>% filter(year %in% seq(1998, 2020))
+
+years = fishDataSf$year %>% unique() %>% sort() #Get years to focus on in ascending order. Previously we have demonstrated that the years between fish and inverts are identical.
+fishlist = list() #Holder for our fish dfs
+invertlist = list() #Holder for our invert dfs
+
+for (i in years){
+  
+  print(paste("Working on", i))
+  
+    #Import year i rasters
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Rasters")
+  stack1 = rast(
+    list.files() %>% str_subset(pattern = as.character(i))) #Get wave and temp rasters
+  
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/EcologicalClassifications")
+  stack2 = rast(
+    list.files() %>% str_subset(pattern = "Rast") %>% #Get MPA, protection status, region, and imcra rasters
+    str_subset(pattern = ".aux.xml", negate = TRUE))
+    
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry")
+  stack3 = rast(
+    list.files() %>% str_subset(pattern = "50mMean") %>% #Get statewide terrain metrics and bathy
+    str_subset(pattern = ".aux.xml", negate = TRUE))
+    
+  stack = c(stack1, stack2, stack3)
+  names(stack)[23] = "Depth" #Rename to something simpler
+  names(stack) = names(stack) %>% str_replace(pattern = i %>% as.character(), replacement = "")
+  
+  stack = mask(stack, stack) #If one layer has an NA in a given cell locale make it NA in all layers
+  
+  rm(stack1, stack2, stack3)
+  
+  #Export year stack for later use
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/Modelling/PredictorStacks")
+  writeRaster(stack, str_c("PredictorStack", i, ".tif"), overwrite = TRUE)
+   
+  #Append to relevant year of fish data. i-2009 converts our active year to 1, 2, 3 etc  
+  fishlist[[i-1997]] = fishDataSf %>% filter(year == i) %>% 
+    vect() %>% 
+    terra::extract(y = .,
+                   x = stack,
+                   bind = TRUE) %>% 
+    st_as_sf() %>% 
+    mutate(longitude = st_coordinates(.)[,1],
+           latitude = st_coordinates(.)[,2]) %>% 
+    st_drop_geometry() %>% 
+    dplyr::select(-c(X,)) %>% 
+    dplyr::select(1,2,3,4,5,263,264,265,266,277,278,267:276,253:262,6:253) #Reorder columns to something logical
+  
+  #Append to relevant year of invert data. i-2009 converts our active year to 1, 2, 3 etc  
+  invertlist[[i-1997]] = fishDataSf %>% filter(year == i) %>% 
+    vect() %>% 
+    terra::extract(y = .,
+                   x = stack,
+                   bind = TRUE) %>% 
+    st_as_sf() %>% 
+    mutate(longitude = st_coordinates(.)[,1],
+           latitude = st_coordinates(.)[,2]) %>% 
+    st_drop_geometry() %>% 
+    dplyr::select(-c(X,)) %>% 
+    dplyr::select(1,2,3,4,5,263,264,265,266,277,278,267:276,253:262,6:253) #Reorder columns to something logical
+  
+  
+}
+
+fishData = do.call(rbind, fishlist)
+invertData = do.call(rbind, invertlist)
+
+setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/Modelling/ResponseCSVs")
+write.csv(fishData, "fishDataFinal.csv")
+write.csv(invertData, "invertDataFinal.csv")
 
 
+
+
+```
 
 
 
