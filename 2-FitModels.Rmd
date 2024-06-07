@@ -22,10 +22,10 @@ library(dplyr)
 ### 3) Directories
 
 ```{r}
-localDir = getwd()
+localDir = "."
 data.directory = file.path(localDir, "ResponseCSVs")
-model.directory = file.path(localDir, "UnfittedModels")
-
+unfitted.model.directory = file.path(localDir, "UnfittedModels")
+fitted.model.directory = file.path(localDir, "FittedModels")
 ```
 
 ### 4) Check intercorrelation
@@ -36,7 +36,6 @@ First off, we need to see how many of our environmental predictors are intercorr
 #Import fish and invert data
 fishData = read.csv(file.path(data.directory, "fishDataFinal.csv"), stringsAsFactors = TRUE)
 invertData = read.csv(file.path(data.directory, "invertDataFinal.csv"), stringsAsFactors = TRUE)
-
 
 #Check intercor of all environmental predictors. Looking for Pearsons >0.7.
 cor1 = fishData[,12:31] %>% cor(method = "pearson")
@@ -74,7 +73,7 @@ invertData = invertData[,c(1:11, 12:17, 19:20, 24, 30, 32:283)]
 
 ```
 
-### 5) Begin model fitting.
+### 5) Prep matrices
 
 Check data structure and amend as needed.
 
@@ -88,12 +87,14 @@ invertData$year = as.factor(invertData$year)
 ```
 
 
-Extract X matrix - environmental variables.
+Extract X matrix - environmental variables. Time included as an integer here so we can see a linear effect not the comparative effect associated with including it as a factor.
 
 ```{r}
-fishX = fishData[,12:21]
+fishX = fishData[,c(3,12:21)]
+fishX$year = as.integer(fishX$year) #Set year back to int
 
-invertX = invertData[,12:21]
+invertX = invertData[,c(3,12:21)]
+invertX$year = as.integer(invertX$year) #Set year back to int
 
 ```
 
@@ -131,55 +132,337 @@ invertY <- invertY[ , -c(rareInvert, ovabunInvert)]
 #Dropping the rare species leaves 48 fish and 46 inverts.
 
 #Assess abundance histogram, prevalence, and log abundance conditional on presence
-hist(colMeans(fishY), nclass = 35, main = "Mean Abun per sample unit") #Most fish are in super low densities (<6 abundance per sample) per sample unit but 8-10 (25% of all fish left in the data) have higher abundance spanning up 35 individuals per sample on average. Huge 0 spike here.
-hist(colMeans(fishY>0), main = "Prevalence") #Where a given fish species is present most have <0.3 prevalence. 9 or so appear to have >0.4 prevalence.
-hist(log(fishY[fishY>0]), main = "log abundance conditional on presence") #Across all fish, even when logged, the abundance is still skewed towards small values. Reduced 0 spike compared to untransformed data mind.
-hist(rowSums(fishY>0), main = "Richness") #Most samples have moderate species richness ~12 fish species per sample. Slight skew to lower richnesses but pretty normal.
+hist(colMeans(fishY), nclass = 35, main = "Fish - Mean Abun per sample unit") #Most fish are in super low densities (<6 abundance per sample) per sample unit but 8-10 (25% of all fish left in the data) have higher abundance spanning up 35 individuals per sample on average. Huge 0 spike here.
+hist(colMeans(fishY>0), main = "Fish - Prevalence") #Where a given fish species is present most have <0.3 prevalence. 9 or so appear to have >0.4 prevalence.
+hist(log(fishY[fishY>0]), main = "Fish - log abundance conditional on presence") #Across all fish, even when logged, the abundance is still skewed towards small values. Reduced 0 spike compared to untransformed data mind.
+hist(rowSums(fishY>0), main = "Fish - Richness") #Most samples have moderate species richness ~12 fish species per sample. Slight skew to lower richnesses but pretty normal.
 
-hist(colMeans(invertY), nclass = 20, main = "Mean Abun per sample unit") #Most invert species are hardly present on average, some have increased abundance to ~30 on average across sample units then some a handful (1-2) are comparatively super common. Up to 80-100 individuals per sample unit. 
-hist(colMeans(invertY>0), nclass = 10, main = "Prevalence") #Most inverts have <0.2 prevalence. Then a few more have 0.2-0.3. Beyond which it really drops off in frequency to the higher prevalence. Generally very few species are strongly prevalent.
-hist(log(invertY[invertY>0]), main = "log abundance conditional on presence") #As with fish there is still strong negative skew. Better than untransformed though.
-hist(rowSums(invertY>0), main = "Richness") #Most samples have moderate species richness ~12 inverts per sample. Slight skew to lower richnesses but pretty normal.
+hist(colMeans(invertY), nclass = 20, main = "Inverts - Mean Abun per sample unit") #Most invert species are hardly present on average, some have increased abundance to ~30 on average across sample units then some a handful (1-2) are comparatively super common. Up to 80-100 individuals per sample unit. 
+hist(colMeans(invertY>0), nclass = 10, main = "Inverts - Prevalence") #Most inverts have <0.2 prevalence. Then a few more have 0.2-0.3. Beyond which it really drops off in frequency to the higher prevalence. Generally very few species are strongly prevalent.
+hist(log(invertY[invertY>0]), main = "Inverts - log abundance conditional on presence") #As with fish there is still strong negative skew. Better than untransformed though.
+hist(rowSums(invertY>0), main = "Inverts - Richness") #Most samples have moderate species richness ~12 inverts per sample. Slight skew to lower richnesses but pretty normal.
 
 
 ```
 
 From the above we can see that both our fish and invert data have strongly positively skewed abundances (lean towards loads of 0s and few high abundances). Looks like we may need a hurdle model so that HMSC can model the presence as one component, then where the species is present we can build another model to predict the abundances.
 
-### BEGIN HERE!!!!!!!!!!!!!!!!!!!!!!
-
 Extract S matrix - Study design aspects.
 
 ```{r}
-fishS = fishData[,c(1,3,6,7,8,9)] #Grab site name, sampling, year, imcra bioregion, MPA protection status (protected or not?), the MPA name the points are associated with, and the broader geographic region as study design components
+fishS = fishData[,c(1,3,6,7,8,9)] #Grab site name, sampling, year, imcra bioregion, MPA protection status (protected or not?), the MPA name the points are associated with, and the broader geographic region as study design components. We may not use all of these in the model but at least they're there.
 
 invertS = invertData[, c(1,3,6,7,8,9)] #As above
 
 #These are all factor variables
 ```
 
-Finally we can make some random effect variables.
+We now have our SXY matrices. Checking the names of them then moving on to actually defining models.
 
 ```{r}
-fishXY = as.matrix(cbind(fishData$longitude, fishData$latitude))
-rownames(xy)= S$SampleID
-colnames(xy)=c("x-coordinate","y-coordinate")
+str(fishS)
+str(fishX)
+str(fishY)
 
-rL.nngp <- HmscRandomLevel(sData = xy, longlat = FALSE, sMethod = 'NNGP',nNeighbours = 10)
-rL.nngp <- setPriors(rL.nngp,nfMin=1,nfMax=1)
+str(invertS)
+str(invertX)
+str(invertY)
+```
 
-#rL.strata <- HmscRandomLevel(units = levels(studyDesign$strata))
+### 6) Define models
 
-#Add year as random effect. Helps account for temporal autocorrelation.
-rL.fish.dyear <- HmscRandomLevel(units = levels(fishS$year))
-rL.invert.dyear <- HmscRandomLevel(units = levels(invertS$year))
+Now we can begin to define some models. At present, for the sake of a meeting next week, we ignore adding in a spatial random effect and we ignore the issues with imcra and region we are having. Let's keep it simple for now. We also ignore any phylogenetic aspects. 7.6.24.
 
+```{r}
+#No need to split Xformula between inverts and fish as they get the same structure. Note the code doesnt actually call a specific object, it just holds variable names.
+#Define environmental drivers.
+XFormula <- ~ year +
+  adjSD + #Maybe needs to be asymtotic?
+  bpi +
+  qeastness +
+  qnorthness +
+  planc +
+  profc +
+  twistc +
+  Depth +
+  poly(SignifWaveHeightWinter95th, degree = 2, raw = TRUE) +
+  poly(TemperatureSummerMean, degree = 2, raw = TRUE) #Second order poly allows for intermediate thermal optimum. E.g. Some species like it warm, not hot, not cold. Can't do that with linear feature. A linear feature assumes hotter = better.
+
+#Define study matrix. Study type factors. Random effects not included here - dealt with later on!
+#Looks like to make a random effect the associated study design variable must be included at this stage. E.g. tell hmsc it is a component of the study design, then inform it it's what we want to base our random effect on.
+#Needs defining for the fish and inverts separately due to the different number of rows.
+
+#Defining siteID as a random effect, protection as a fixed effect factor, and year as a random effect.
+fishStudyDesign <- data.frame(Fyear = fishS$year, protection = fishS$MPAProtectStat, siteID = fishS$site_name)
+
+#Sorting out random effects
+rL.fishYear <- HmscRandomLevel(units = levels(fishStudyDesign$Fyear)) #Tell hmsc that year needs to be treated as random
+rL.fishSiteID <- HmscRandomLevel(units = levels(fishStudyDesign$siteID)) #Tell hmsc that siteID needs to be treated as random
+
+#Repeat for inverts
+invertStudyDesign <- data.frame(Fyear = invertS$year, protection = invertS$MPAProtectStat, siteID = invertS$site_name)
+
+rL.invertYear <- HmscRandomLevel(units = levels(invertStudyDesign$Fyear)) #Tell hmsc that year needs to be treated as random
+rL.invertSiteID <- HmscRandomLevel(units = levels(invertStudyDesign$siteID)) #Tell hmsc that siteID needs to be treated as random
+
+
+#Define Y matrices. Needs one for pres/abs and then another to predict the abundance. Needs defining for fish and inverts
+#Define for fish
+fishYpa = 1*(fishY>0) #Calcs pres/abs
+fishYabu = fishY
+fishYabu[fishY==0] = NA
+fishYabu=log(fishYabu) #Calcs log transformed abundance where presence == 1
+
+invertYpa = 1*(invertY>0) #Calcs pres/abs
+invertYabu = invertY
+invertYabu[invertY==0] = NA
+invertYabu=log(invertYabu) #Calcs log transformed abundance where presence == 1
+
+
+```
+
+Finally we can define our models. Nothing fancy here yet. Just a pres/abs and an abundance model for each of the fish and invert datasets.
+
+```{r}
+mF1 <- Hmsc(Y= fishYpa,
+            XData = fishX, XFormula = XFormula,
+            #TrData = TrData, TrFormula = TrFormula,
+            distr = "probit",
+            studyDesign = fishStudyDesign,
+            ranLevels = list("Fyear" = rL.fishYear, #Names of random variables defined here must match cols in studydesign matrix
+                             "siteID" = rL.fishSiteID)
+            )
+
+mF2 <- Hmsc(Y= fishYabu, YScale = TRUE,
+            XData = fishX, XFormula = XFormula,
+            #TrData = TrData, TrFormula = TrFormula,
+            distr = "normal",
+            studyDesign = fishStudyDesign,
+            ranLevels = list("Fyear" = rL.fishYear,
+                             "siteID" = rL.fishSiteID)
+            )
+
+mI1 <- Hmsc(Y= invertYpa,
+            XData = invertX, XFormula = XFormula,
+            #TrData = TrData, TrFormula = TrFormula,
+            distr = "probit",
+            studyDesign = invertStudyDesign,
+            ranLevels = list("Fyear" = rL.invertYear,
+                             "siteID" = rL.invertSiteID)
+            )
+
+mI2 <- Hmsc(Y= invertYabu, YScale = TRUE,
+            XData = invertX, XFormula = XFormula,
+            #TrData = TrData, TrFormula = TrFormula,
+            distr = "normal",
+            studyDesign = invertStudyDesign,
+            ranLevels = list("Fyear" = rL.invertYear,
+                             "siteID" = rL.invertSiteID)
+            )
+
+models <- list(mF1, mF2, mI1, mI2)
+modelnames <- c("fish_presence_absence", "fish_abundance_COP", "invert_presence_absence", "invert_abundance_COP")
+names(models) = modelnames
+saveRDS(models, file = file.path(unfitted.model.directory, "PreMeetingModelsJune24"))
 
 
 
 ```
 
+### 7) Fit models
+
+Now we fit the models iteratively over a loop of increasing thinning numbers. Each one takes longer than the last. But the longer ones might make better predictions? Note, need to upskill on this component.
+
+samples = N MCMC samples to be collected from each chain.
+transient = number of MCMC steps to leave as spin up. E.g. beyond this number we start using the data to get posterior samples
+thin = number of MCMC steps between each recorded sample.
+nChains = number of independent chains to be run
+nParralel = number of parallel processes on which the chains are ran. Typically one process per chain.
+
+
+```{r}
+#First loop picks the model, second loop fits it across various mcmc settings then saves the model as a specifically named object.
+
+set.seed(1995) #Repeatable randomness
+
+#First set and forget the N chains and N samples
+nChains = 4
+samples = 250
+
+for (i in 1:length(models)){
+  
+  print(paste("Working on model", i))
+  
+  focalModel = models[[i]] #Get ith model from list
+  
+for (thin in c(1, 10, 100)){ #100,1000))
+  
+  print(paste("With thinning = ", thin))
+  
+  transient = 50*thin
+  
+  m = sampleMcmc(hM = focalModel, 
+                 thin = thin, 
+                 samples = samples, 
+                 transient = transient,
+                 nChains = nChains,
+                 nParallel = nChains)
+  
+  filename=file.path(fitted.model.directory, paste0(names(models[i]),"_model_chains_", as.character(nChains), "_samples_", as.character(samples), "_thin_", as.character(thin)))
+  
+  saveRDS(m, file=filename) #Save fitted model
+}
+}
 
 
 
+```
+
+### 8) Check MCMC Convergence
+
+Now we have fitted some models on comparatively low chain lengths, let's check the convergence. If it's rubbish then there's no point looking at the parameter estimates. We grab...
+
+- the posterior estimates of the beta parameters (the species niches)
+- nothing else at present...this might change when we add phylogenetic samples or add in space. Do we need to add in estimates of omega if we aren't interested in species interactions?
+
+```{r}
+#Loop through each fitted model, read it in, grab the posterior estimates. Note we only bother doing this for the model with the most thinning (the longest chain length fitted).
+highestThin = "thin_100"
+
+fittedModels = list.files(file.path(fitted.model.directory))
+fittedModels = fittedModels[grepl(highestThin, fittedModels)]
+
+rm(highestThin)
+
+for (i in 1:length(fittedModels)){
+  
+  #Grab each model in turn
+  focalModel = readRDS(file.path(fitted.model.directory, fittedModels[i]))
+  
+  #What model do we have?
+  print(paste("Posterior beta parameters for", fittedModels[i]))
+  
+  #Convert to coda
+  mpost = convertToCodaObject(focalModel,
+                              spNamesNumbers = c(T,F),
+                              covNamesNumbers = c(T,F))
+  
+  #Estimate betas
+  ess.beta = effectiveSize(mpost$Beta)
+  psrf.beta = gelman.diag(mpost$Beta, multivariate=FALSE)$psrf
+  print("Efffective Sample Size - ideally as big as possible")
+  print(summary(ess.beta))
+  print("Potential Scale Reduction Factor - ideally as close to 1 as possible")
+  print(summary(psrf.beta))
+  
+  #Plot em
+  hist(ess.beta)
+  hist(psrf.beta)
+
+}
+
+
+```
+
+All four models have Beta PSRF close to 1. But not as close as in the examples in the book. Maybe we can improve model fit by respecifying? Or cranking the N chains and thinning (we can run this over a weekend).
+
+### 9) Check explanatory and predictive power
+
+As a final thing for these codes let's estimate the explanatory and predictive power of each model.....
+- explanatory power predicts using data the model has already seen
+- predictive power uses CV to test how the model goes when we hold out data and test it on the holdout sets
+
+```{r}
+#Again, looping through each model. This time we save the outputs. As with last time, we only bother with this with the longest model runs we've done in the fitted models folder.
+
+highestThin = "thin_100"
+
+fittedModels = list.files(file.path(fitted.model.directory))
+fittedModels = fittedModels[grepl(highestThin, fittedModels)]
+
+rm(highestThin)
+
+for (i in 1:length(fittedModels)){
+  
+  #Grab each model in turn
+  focalModel = readRDS(file.path(fitted.model.directory, fittedModels[i]))
+  
+  #What model do we have?
+  print(paste("Explanatory and predictive power for", fittedModels[i]))
+  
+  #Store predictions
+  preds = pcomputePredictedValues(focalModel, nParallel = nChains) #If we introduce a spatial effect we need to tweak this bit of the code to include "updater = list(GammaEta=FALSE)". Best to ask Joel before we do so
+  
+  #Compute explanatory power and save various metrics
+  fit = evaluateModelFit(hM = focalModel, predY = preds)
+  
+  #If the model has TjurR2 present then give it one set of explanatory variables (those associated with a pres abs model). If it isn't then return the other set of models.
+  ExplanSpSpecific = if (is.null(fit$TjurR2)){ 
+    
+    data.frame(Species = focalModel$spNames,
+                             RMSE = fit$RMSE,
+                             R2 = fit$R2)}
+  else {
+    
+    data.frame(Species = focalModel$spNames,
+                             RMSE = fit$RMSE,
+                             AUC = fit$AUC,
+                             TjurR2 = fit$TjurR2)
+  }
+  
+  ExplanSpUnspecific = if (is.null(fit$TjurR2)){
+    
+    data.frame(Metric = c("Mean", "Median", "SD", "Min", "Max"),
+                             RMSE = c(mean(fit$RMSE), median(fit$RMSE), sd(fit$RMSE), min(fit$RMSE), max(fit$RMSE)),
+                             R2 = c(mean(fit$R2), median(fit$R2), sd(fit$R2), min(fit$R2), max(fit$R2)))}
+  else { 
+    
+    data.frame(Metric = c("Mean", "Median", "SD", "Min", "Max"),
+                             RMSE = c(mean(fit$RMSE), median(fit$RMSE), sd(fit$RMSE), min(fit$RMSE), max(fit$RMSE)),
+                             AUC = c(mean(fit$AUC), median(fit$AUC), sd(fit$AUC), min(fit$AUC), max(fit$AUC)),
+                             TjurR2 = c(mean(fit$TjurR2), median(fit$TjurR2), sd(fit$TjurR2), min(fit$TjurR2), max(fit$TjurR2)))}
+  
+  
+  saveRDS(ExplanSpSpecific, file = file.path(localDir, "Outputs", paste("ExplanPwrSpSpecific", fittedModels[i], sep = "_")))
+  saveRDS(ExplanSpUnspecific, file = file.path(localDir, "Outputs", paste("ExplanPwrSpUnspecific", fittedModels[i], sep = "_")))
+  
+  
+  #Repeat for CV
+  nfolds = 2
+  partition = createPartition(focalModel, nfolds = nfolds)
+  preds = pcomputePredictedValues(focalModel, partition = partition, nParallel = nChains*nfolds) #One fold from each chain on each core. So chains*folds gives cores needed.
+  cvfit = evaluateModelFit(hM = focalModel, predY = preds)
+  
+  PredictSpSpecific = if (is.null(cvfit$TjurR2)){ 
+    
+    data.frame(Species = focalModel$spNames,
+                             RMSE = cvfit$RMSE,
+                             R2 = cvfit$R2)}
+  else {
+    
+    data.frame(Species = focalModel$spNames,
+                             RMSE = cvfit$RMSE,
+                             AUC = cvfit$AUC,
+                             TjurR2 = cvfit$TjurR2)
+  }
+  
+  PredictSpUnspecific = if (is.null(cvfit$TjurR2)){
+    
+    data.frame(Metric = c("Mean", "Median", "SD", "Min", "Max"),
+                             RMSE = c(mean(cvfit$RMSE), median(cvfit$RMSE), sd(cvfit$RMSE), min(cvfit$RMSE), max(cvfit$RMSE)),
+                             R2 = c(mean(cvfit$R2), median(cvfit$R2), sd(cvfit$R2), min(cvfit$R2), max(cvfit$R2)))}
+  else { 
+    
+    data.frame(Metric = c("Mean", "Median", "SD", "Min", "Max"),
+                             RMSE = c(mean(cvfit$RMSE), median(cvfit$RMSE), sd(cvfit$RMSE), min(cvfit$RMSE), max(cvfit$RMSE)),
+                             AUC = c(mean(cvfit$AUC), median(cvfit$AUC), sd(cvfit$AUC), min(cvfit$AUC), max(cvfit$AUC)),
+                             TjurR2 = c(mean(cvfit$TjurR2), median(cvfit$TjurR2), sd(cvfit$TjurR2), min(cvfit$TjurR2), max(cvfit$TjurR2)))}
+  
+  saveRDS(PredictSpSpecific, file = file.path(localDir, "Outputs", paste("PredictPwrSpSpecific", fittedModels[i], sep = "_")))
+  saveRDS(PredictSpUnspecific, file = file.path(localDir, "Outputs", paste("PredictPwrSpUnspecific", fittedModels[i], sep = "_")))
+}
+
+
+
+```
 
