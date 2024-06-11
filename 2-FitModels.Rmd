@@ -1,6 +1,6 @@
-### Purspose
+### Purpose
 
-This code covers model fitting for the parks VIC hmsc project. The subsequent codes are laid out in the same fashion as suggested in the HMSC book.
+This code covers model fitting for the parks VIC hmsc project. Part 2 (these codes) look at defining and fitting models then looking at MCMC convergence and the associated model fit.
 
 ### 0) Setup - identify working directory and set seed
 
@@ -87,13 +87,13 @@ invertData$year = as.factor(invertData$year)
 ```
 
 
-Extract X matrix - environmental variables. Time included as an integer here so we can see a linear effect not the comparative effect associated with including it as a factor.
+Extract X matrix - environmental variables. Time included as an integer here so we can see a linear effect not the comparative effect associated with including it as a factor. Protection status included as a factor.
 
 ```{r}
-fishX = fishData[,c(3,12:21)]
+fishX = fishData[,c(3,7,12:21)]
 fishX$year = as.integer(fishX$year) #Set year back to int
 
-invertX = invertData[,c(3,12:21)]
+invertX = invertData[,c(3,7,12:21)]
 invertX$year = as.integer(invertX$year) #Set year back to int
 
 ```
@@ -186,7 +186,9 @@ XFormula <- ~ year +
   twistc +
   Depth +
   poly(SignifWaveHeightWinter95th, degree = 2, raw = TRUE) +
-  poly(TemperatureSummerMean, degree = 2, raw = TRUE) #Second order poly allows for intermediate thermal optimum. E.g. Some species like it warm, not hot, not cold. Can't do that with linear feature. A linear feature assumes hotter = better.
+  poly(TemperatureSummerMean, degree = 2, raw = TRUE)+  #Second order poly allows for intermediate thermal optimum. E.g. Some species like it warm, not hot, not cold. Can't do that with linear feature. A linear feature assumes hotter = better.
+  MPAProtectStat
+  
 
 #Define study matrix. Study type factors. Random effects not included here - dealt with later on!
 #Looks like to make a random effect the associated study design variable must be included at this stage. E.g. tell hmsc it is a component of the study design, then inform it it's what we want to base our random effect on.
@@ -295,7 +297,7 @@ for (i in 1:length(models)){
   
   focalModel = models[[i]] #Get ith model from list
   
-for (thin in c(1, 10, 100)){ #100,1000))
+for (thin in c(1, 10)){ #100,1000))
   
   print(paste("With thinning = ", thin))
   
@@ -327,10 +329,12 @@ Now we have fitted some models on comparatively low chain lengths, let's check t
 
 ```{r}
 #Loop through each fitted model, read it in, grab the posterior estimates. Note we only bother doing this for the model with the most thinning (the longest chain length fitted).
-highestThin = "thin_100"
+highestThin = "thin_10"
 
 fittedModels = list.files(file.path(fitted.model.directory))
 fittedModels = fittedModels[grepl(highestThin, fittedModels)]
+fittedModels = fittedModels[grepl("chains_4", fittedModels)]
+fittedModels = fittedModels[!grepl("thin_100", fittedModels)]
 
 rm(highestThin)
 
@@ -375,10 +379,12 @@ As a final thing for these codes let's estimate the explanatory and predictive p
 ```{r}
 #Again, looping through each model. This time we save the outputs. As with last time, we only bother with this with the longest model runs we've done in the fitted models folder.
 
-highestThin = "thin_100"
+highestThin = "thin_10"
 
 fittedModels = list.files(file.path(fitted.model.directory))
 fittedModels = fittedModels[grepl(highestThin, fittedModels)]
+fittedModels = fittedModels[grepl("chains_4", fittedModels)]
+fittedModels = fittedModels[!grepl("thin_100", fittedModels)]
 
 rm(highestThin)
 
@@ -465,4 +471,46 @@ for (i in 1:length(fittedModels)){
 
 
 ```
+
+Optional chunk below for re-reading in those dataframes we just made and prints them.
+
+```{r}
+fitMetrics = list.files(file.path(localDir, "/Outputs/Fit"))
+fitMetrics = fitMetrics[grepl("SpUnspecific", fitMetrics)]
+fitMetrics = fitMetrics[grepl("thin_10", fitMetrics)]
+fitMetrics = fitMetrics[!grepl(".csv", fitMetrics)]
+fitMetrics = fitMetrics[!grepl("thin_100", fitMetrics)]
+
+#Non-species specific ones are a good barometer of fit.
+temp = readRDS(file = file.path(localDir, "/Outputs/Fit",fitMetrics[2]))
+print(temp)
+
+#Looped version. Non-species specific ones are a good guide barometer of fit. Loads in then saves as csv
+for (i in 1:length(fitMetrics)){
+  temp = readRDS(file = file.path(localDir, "/Outputs/Fit",fitMetrics[i]))
+  
+  write.csv(temp, file = file.path(localDir, "Outputs/Fit", paste(fitMetrics[i], ".csv", sep = "")), row.names = FALSE)
+    
+
+}
+
+
+
+
+```
+
+
+Median fit metrics for each model are below for quick reference (correct as of 11.6.2024):
+
+- FISH PA - Explanatory (RMSE = 0.3, AUC = 0.89, TjurR2 = 0.35) Predictive (RMSE = 0.33, AUC = 0.84, TjurR2 = 0.29)
+- FISH ACOP - Explanatory (RMSE = 0.76, R2 = 0.28) Predictive (RMSE = 0.85, R2 = 0.12)
+
+- INVERT PA - Explanatory (RMSE = 0.29, AUC = 0.89, TjurR2 = 0.27) Predictive (RMSE = 0.30, AUC = 0.83, TjurR2 = 0.22)
+- INVERT ACOP - Explanatory (RMSE = 0.69, R2 = 0.28) Predictive (RMSE = 0.77, R2 = 0.10).
+
+Some fit based trends we can see are:
+- Presence absence models had a better fit than their ACOP counterparts. Perhaps the residual skew in the abundance record warrants additions transformations (remember we told HMSC that the distribution was normal but perhaps the leftover skew mucks around with this)? Maybe we're missing key predictors or our models structure is wonky?
+- Fish and invert models were generally comparable in terms of model fit. Although fish models had slightly higher Tjur's R2 when comparing the presence absence models.
+
+In the next set of codes we'll look at the estimates of each parameter to see what is driving this model fit.
 
