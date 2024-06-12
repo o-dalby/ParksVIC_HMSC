@@ -710,7 +710,7 @@ fishCounts = fishRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")) %>
   group_by(site_name, site_code, survey_date, year, location, reporting_name) %>% 
   summarise(count = sum(total, na.rm = TRUE)) %>% 
   pivot_wider(id_cols = c("site_name", "site_code", "survey_date", "location", "year"),
-              names_from = "reporting_name",
+              names_from = "species_name",
               values_from = "count",
               values_fill = 0) %>% 
   dplyr::filter(!site_code == "PPB8") #Drop suspicious st leonards data
@@ -720,7 +720,7 @@ invertCounts = invertRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")
   group_by(site_name, site_code, survey_date, year, location, reporting_name) %>% 
   summarise(count = sum(total, na.rm = TRUE)) %>% 
   pivot_wider(id_cols = c("site_name", "site_code", "survey_date", "location", "year"),
-              names_from = "reporting_name",
+              names_from = "species_name",
               values_from = "count",
               values_fill = 0) %>% 
   dplyr::filter(!site_code == "PPB8") #Drop suspicious st leonards data
