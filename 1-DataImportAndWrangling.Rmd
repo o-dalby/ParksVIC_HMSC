@@ -1105,6 +1105,21 @@ for (i in years){
 fishData = do.call(rbind, fishlist)
 invertData = do.call(rbind, invertlist)
 
+#After some meetings 12.6.2024 we now only model data from 2002 onwards.
+fishData = fishData[fishData$year %in% seq(2002, 2020, 1),]
+invertData = invertData[invertData$year %in% seq(2002, 2020, 1),]
+
+#We also want a new variable time since 2002 (2002 is when the parks became protected).
+fishData$YSince2002 = fishData$year - 2002
+invertData$YSince2002 = invertData$year - 2002
+
+#Move this new time variable next to the other one.
+fishData = fishData %>% 
+  relocate(YSince2002, .after = year)
+
+invertData = invertData %>% 
+  relocate(YSince2002, .after = year)
+
 setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/Modelling/ResponseCSVs")
 write.csv(fishData, "fishDataFinal.csv", row.names = FALSE)
 write.csv(invertData, "invertDataFinal.csv", row.names = FALSE)

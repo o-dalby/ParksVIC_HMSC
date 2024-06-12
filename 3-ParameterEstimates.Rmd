@@ -34,20 +34,28 @@ Grab the 4 models we fitted earlier with the highest thinning value.
 ```{r}
 #Load in each of the models we've fitted so far and then shove it in a list.
 highestThin = "thin_10"
+highestChains = "chains_4"
 
 fittedModels = list.files(file.path(fitted.model.directory))
+fittedModels = fittedModels[grepl(highestChains, fittedModels)]
 fittedModels = fittedModels[grepl(highestThin, fittedModels)]
-fittedModels = fittedModels[!grepl("thin_100", fittedModels)]
+
+rm(highestThin)
+rm(highestChains)
 
 models = list()
+modelnames = list()
 
 for (i in 1:length(fittedModels)){
   
   #Grab each model in turn and shove in ith entry of list
   models[[i]] = readRDS(file.path(fitted.model.directory, fittedModels[i]))
+  modelnames[[i]] = fittedModels[i]
   
 }
-  
+
+
+
 
 ```
 

@@ -38,38 +38,37 @@ fishData = read.csv(file.path(data.directory, "fishDataFinal.csv"), stringsAsFac
 invertData = read.csv(file.path(data.directory, "invertDataFinal.csv"), stringsAsFactors = TRUE)
 
 #Check intercor of all environmental predictors. Looking for Pearsons >0.7.
-cor1 = fishData[,12:31] %>% cor(method = "pearson")
+cor1 = fishData[,13:32] %>% cor(method = "pearson")
 corrplot(cor1, method = "number", type = "lower", diag = FALSE)
 
 #adjSD doesnt play well with vrm or qslope. The latter two dont play together either. All wave measures are >0.7. Temp doesn't look much better.
 #Try again with just seasonal measure and SD for wave and temp. And drop Qslope and vrm. Mean for temp as longer times are needed to impact physiological stress but waves get 95th as a single big wave might do damage.
-cor1 = fishData[,c(12:17, 19:20, 24, 26, 30, 31)] %>% cor(method = "pearson")
+cor1 = fishData[,c(13:18, 20:21, 25, 27, 31, 32)] %>% cor(method = "pearson")
 corrplot(cor1, method = "number", type = "lower", diag = FALSE)
 
 #Terrains are better but the waves still trip us up. Repeat for just seasonal mean for temp and seasonal 95th for waves.
-cor1 = fishData[,c(12:17, 19:20, 26, 30)] %>% cor(method = "pearson")
+cor1 = fishData[,c(13:18, 20:21, 25, 31)] %>% cor(method = "pearson")
 corrplot(cor1, method = "number", type = "lower", diag = FALSE)
 
 #Lets run with that.
-fishData = fishData[,c(1:11, 12:17, 19:20, 24, 30, 32:278)]
-
+fishData = fishData[,c(1:12, 13:18, 20:21, 25, 31, 33:279)]
 
 #Repeat for inverts.....
 #Check intercor of all environmental predictors. Looking for Pearsons <0.7.
-cor1 = invertData[,12:31] %>% cor(method = "pearson")
+cor1 = invertData[,13:32] %>% cor(method = "pearson")
 corrplot(cor1, method = "number", type = "lower", diag = FALSE)
 
 #adjSD doesnt play well with vrm or qslope. The latter two dont play together either. All wave measures are >0.7. Temp doesn't look much better.
 #Try again with just seasonal measure and SD for wave and temp. And drop Qslope and vrm. Mean for temp as longer times are needed to impact physiological stress but waves get 95th as a single big wave might do damage.
-cor1 = invertData[,c(12:17, 19:20, 24, 26, 30, 31)] %>% cor(method = "pearson")
+cor1 = invertData[,c(13:18, 20:21, 25, 27, 31, 32)] %>% cor(method = "pearson")
 corrplot(cor1, method = "number", type = "lower", diag = FALSE)
 
 #Terrains are better but the waves still trip us up. Repeat for just seasonal mean for temp and seasonal 95th for waves.
-cor1 = invertData[,c(12:17, 19:20, 24, 30)] %>% cor(method = "pearson")
+cor1 = invertData[,c(13:18, 20:21, 25, 31)] %>% cor(method = "pearson")
 corrplot(cor1, method = "number", type = "lower", diag = FALSE)
 
 #Lets run with that. Unsurprisingly identical process as I think the RSL survey data take place at the same locales. Marginally different col numbers mind. Different N species found.
-invertData = invertData[,c(1:11, 12:17, 19:20, 24, 30, 32:283)]
+invertData = invertData[,c(1:12, 13:18, 20:21, 25, 31, 33:284)]
 
 ```
 
@@ -90,10 +89,10 @@ invertData$year = as.factor(invertData$year)
 Extract X matrix - environmental variables. Time included as an integer here so we can see a linear effect not the comparative effect associated with including it as a factor. Protection status included as a factor.
 
 ```{r}
-fishX = fishData[,c(3,7,12:21)]
+fishX = fishData[,c(3,4,8,13:22)]
 fishX$year = as.integer(fishX$year) #Set year back to int
 
-invertX = invertData[,c(3,7,12:21)]
+invertX = invertData[,c(3,4,8,13:22)]
 invertX$year = as.integer(invertX$year) #Set year back to int
 
 ```
@@ -101,8 +100,8 @@ invertX$year = as.integer(invertX$year) #Set year back to int
 Extract Y matrix - occurences and abundances.
 
 ```{r}
-fishY = (fishData[,22:247])
-invertY = (invertData[,22:273])
+fishY = (fishData[,23:269])
+invertY = (invertData[,23:273])
 
 #Check for absent or ubiquitous species. Fact it returns a value tells us we have no NAs in our rows too
 range(colMeans(fishY>0))
@@ -112,22 +111,22 @@ range(colMeans(invertY>0))
 min(colSums(invertY>0)) #Some inverts weren't found in any samples
 
 #Check the number of rare taxa (those present in less than 5% of samples)
-rareFish <- which(colSums(fishY>0)<64) #64 is ~5% of samples
-length(rareFish) #117 rare fish
+rareFish <- which(colSums(fishY>0)<48) #48 is ~5% of samples
+length(rareFish) #189 rare fish
 
-rareInvert <- which(colSums(invertY>0)<64) #64is ~5% of samples
-length(rareInvert) #206 rare inverts
+rareInvert <- which(colSums(invertY>0)<49) #49 is ~5% of samples
+length(rareInvert) #205 rare inverts
 
 #Check the number of overabundant taxa (those present in greater than 95% of samples)
-ovabunFish <- which(colSums(fishY>0)>1203) #1203 is ~95% of samples
-length(ovabunFish) #1 overly abundant fish
+ovabunFish <- which(colSums(fishY>0)>920) #920 is ~95% of samples
+length(ovabunFish) #0 overly abundant fish
 
-ovabunInvert <- which(colSums(invertY>0)>1217) #1217 is ~95% of samples
+ovabunInvert <- which(colSums(invertY>0)>931) #931 is ~95% of samples
 length(ovabunInvert) #0 overly abundant inverts
 
-#Drop rare or overabundant species
-fishY <- fishY[ , -c(rareFish, ovabunFish)]
-invertY <- invertY[ , -c(rareInvert, ovabunInvert)]
+#Drop rare or overabundant species. We dont drop overabundant ones as it only selected one sp and we care about tetricus!
+fishY <- fishY[ , -c(rareFish)]
+invertY <- invertY[ , -c(rareInvert)]
 
 #Dropping the rare species leaves 48 fish and 46 inverts.
 
@@ -150,9 +149,9 @@ From the above we can see that both our fish and invert data have strongly posit
 Extract S matrix - Study design aspects.
 
 ```{r}
-fishS = fishData[,c(1,3,6,7,8,9)] #Grab site name, sampling, year, imcra bioregion, MPA protection status (protected or not?), the MPA name the points are associated with, and the broader geographic region as study design components. We may not use all of these in the model but at least they're there.
+fishS = fishData[,c(1,3,7,8,9,10,11,12)] #Grab site name, sampling, year, imcra bioregion, MPA protection status (protected or not?), the MPA name the points are associated with, and the broader geographic region as study design components. We may not use all of these in the model but at least they're there. Also grab lat longs
 
-invertS = invertData[, c(1,3,6,7,8,9)] #As above
+invertS = invertData[, c(1,3,7,8,9,10,11,12)] #As above
 
 #These are all factor variables
 ```
@@ -176,7 +175,7 @@ Now we can begin to define some models. At present, for the sake of a meeting ne
 ```{r}
 #No need to split Xformula between inverts and fish as they get the same structure. Note the code doesnt actually call a specific object, it just holds variable names.
 #Define environmental drivers.
-XFormula <- ~ year +
+XFormula <- ~ YSince2002 +
   adjSD + #Maybe needs to be asymtotic?
   bpi +
   qeastness +
@@ -199,14 +198,28 @@ fishStudyDesign <- data.frame(Fyear = fishS$year, protection = fishS$MPAProtectS
 
 #Sorting out random effects
 rL.fishYear <- HmscRandomLevel(units = levels(fishStudyDesign$Fyear)) #Tell hmsc that year needs to be treated as random
-rL.fishSiteID <- HmscRandomLevel(units = levels(fishStudyDesign$siteID)) #Tell hmsc that siteID needs to be treated as random
+
+#Define spatial random effect - fish
+xy = as.matrix(cbind(fishS$longitude, fishS$latitude))
+rownames(xy)= fishS$site_name #Set row names to Site ID
+xy = xy[!duplicated(row.names(xy)),]#Ditch duplicate locales as we have repeat sampling
+colnames(xy)=c("x-coordinate","y-coordinate")
+
+rL.fish.nngp <- HmscRandomLevel(sData = xy, longlat = FALSE, sMethod = 'NNGP',nNeighbours = 10)
+rL.fish.nngp <- setPriors(rL.fish.nngp,nfMin=1,nfMax=1)
+
 
 #Repeat for inverts
 invertStudyDesign <- data.frame(Fyear = invertS$year, protection = invertS$MPAProtectStat, siteID = invertS$site_name)
-
 rL.invertYear <- HmscRandomLevel(units = levels(invertStudyDesign$Fyear)) #Tell hmsc that year needs to be treated as random
-rL.invertSiteID <- HmscRandomLevel(units = levels(invertStudyDesign$siteID)) #Tell hmsc that siteID needs to be treated as random
 
+xy = as.matrix(cbind(invertS$longitude, invertS$latitude))
+rownames(xy)= invertS$site_name #Set row names to Site ID
+xy = xy[!duplicated(row.names(xy)),]#Ditch duplicate locales as we have repeat sampling
+colnames(xy)=c("x-coordinate","y-coordinate")
+
+rL.invert.nngp <- HmscRandomLevel(sData = xy, longlat = FALSE, sMethod = 'NNGP',nNeighbours = 10)
+rL.invert.nngp <- setPriors(rL.invert.nngp,nfMin=1,nfMax=1)
 
 #Define Y matrices. Needs one for pres/abs and then another to predict the abundance. Needs defining for fish and inverts
 #Define for fish
@@ -232,7 +245,7 @@ mF1 <- Hmsc(Y= fishYpa,
             distr = "probit",
             studyDesign = fishStudyDesign,
             ranLevels = list("Fyear" = rL.fishYear, #Names of random variables defined here must match cols in studydesign matrix
-                             "siteID" = rL.fishSiteID)
+                             "siteID" = rL.fish.nngp)
             )
 
 mF2 <- Hmsc(Y= fishYabu, YScale = TRUE,
@@ -241,7 +254,7 @@ mF2 <- Hmsc(Y= fishYabu, YScale = TRUE,
             distr = "normal",
             studyDesign = fishStudyDesign,
             ranLevels = list("Fyear" = rL.fishYear,
-                             "siteID" = rL.fishSiteID)
+                             "siteID" = rL.fish.nngp)
             )
 
 mI1 <- Hmsc(Y= invertYpa,
@@ -250,7 +263,7 @@ mI1 <- Hmsc(Y= invertYpa,
             distr = "probit",
             studyDesign = invertStudyDesign,
             ranLevels = list("Fyear" = rL.invertYear,
-                             "siteID" = rL.invertSiteID)
+                             "siteID" = rL.invert.nngp)
             )
 
 mI2 <- Hmsc(Y= invertYabu, YScale = TRUE,
@@ -259,13 +272,13 @@ mI2 <- Hmsc(Y= invertYabu, YScale = TRUE,
             distr = "normal",
             studyDesign = invertStudyDesign,
             ranLevels = list("Fyear" = rL.invertYear,
-                             "siteID" = rL.invertSiteID)
+                             "siteID" = rL.invert.nngp)
             )
 
 models <- list(mF1, mF2, mI1, mI2)
 modelnames <- c("fish_presence_absence", "fish_abundance_COP", "invert_presence_absence", "invert_abundance_COP")
 names(models) = modelnames
-saveRDS(models, file = file.path(unfitted.model.directory, "PreMeetingModelsJune24"))
+saveRDS(models, file = file.path(unfitted.model.directory, "PostMeetingModelsJune24"))
 
 
 
@@ -330,13 +343,14 @@ Now we have fitted some models on comparatively low chain lengths, let's check t
 ```{r}
 #Loop through each fitted model, read it in, grab the posterior estimates. Note we only bother doing this for the model with the most thinning (the longest chain length fitted).
 highestThin = "thin_10"
+highestChains = "chains_4"
 
 fittedModels = list.files(file.path(fitted.model.directory))
+fittedModels = fittedModels[grepl(highestChains, fittedModels)]
 fittedModels = fittedModels[grepl(highestThin, fittedModels)]
-fittedModels = fittedModels[grepl("chains_4", fittedModels)]
-fittedModels = fittedModels[!grepl("thin_100", fittedModels)]
 
 rm(highestThin)
+rm(highestChains)
 
 for (i in 1:length(fittedModels)){
   
@@ -380,13 +394,14 @@ As a final thing for these codes let's estimate the explanatory and predictive p
 #Again, looping through each model. This time we save the outputs. As with last time, we only bother with this with the longest model runs we've done in the fitted models folder.
 
 highestThin = "thin_10"
+highestChains = "chains_4"
 
 fittedModels = list.files(file.path(fitted.model.directory))
+fittedModels = fittedModels[grepl(highestChains, fittedModels)]
 fittedModels = fittedModels[grepl(highestThin, fittedModels)]
-fittedModels = fittedModels[grepl("chains_4", fittedModels)]
-fittedModels = fittedModels[!grepl("thin_100", fittedModels)]
 
 rm(highestThin)
+rm(highestChains)
 
 for (i in 1:length(fittedModels)){
   
@@ -429,8 +444,8 @@ for (i in 1:length(fittedModels)){
                              TjurR2 = c(mean(fit$TjurR2), median(fit$TjurR2), sd(fit$TjurR2), min(fit$TjurR2), max(fit$TjurR2)))}
   
   
-  saveRDS(ExplanSpSpecific, file = file.path(localDir, "Outputs", paste("ExplanPwrSpSpecific", fittedModels[i], sep = "_")))
-  saveRDS(ExplanSpUnspecific, file = file.path(localDir, "Outputs", paste("ExplanPwrSpUnspecific", fittedModels[i], sep = "_")))
+  saveRDS(ExplanSpSpecific, file = file.path(localDir, "Outputs/Fit", paste("ExplanPwrSpSpecific", fittedModels[i], sep = "_")))
+  saveRDS(ExplanSpUnspecific, file = file.path(localDir, "Outputs/Fit", paste("ExplanPwrSpUnspecific", fittedModels[i], sep = "_")))
   
   
   #Repeat for CV
@@ -464,26 +479,29 @@ for (i in 1:length(fittedModels)){
                              AUC = c(mean(cvfit$AUC), median(cvfit$AUC), sd(cvfit$AUC), min(cvfit$AUC), max(cvfit$AUC)),
                              TjurR2 = c(mean(cvfit$TjurR2), median(cvfit$TjurR2), sd(cvfit$TjurR2), min(cvfit$TjurR2), max(cvfit$TjurR2)))}
   
-  saveRDS(PredictSpSpecific, file = file.path(localDir, "Outputs", paste("PredictPwrSpSpecific", fittedModels[i], sep = "_")))
-  saveRDS(PredictSpUnspecific, file = file.path(localDir, "Outputs", paste("PredictPwrSpUnspecific", fittedModels[i], sep = "_")))
+  saveRDS(PredictSpSpecific, file = file.path(localDir, "Outputs/Fit", paste("PredictPwrSpSpecific", fittedModels[i], sep = "_")))
+  saveRDS(PredictSpUnspecific, file = file.path(localDir, "Outputs/Fit", paste("PredictPwrSpUnspecific", fittedModels[i], sep = "_")))
 }
 
 
 
 ```
 
-Optional chunk below for re-reading in those dataframes we just made and prints them.
+Optional chunk below for re-reading in those dataframes we just made and exports as csv. Useful for mucking around with with others.
 
 ```{r}
 fitMetrics = list.files(file.path(localDir, "/Outputs/Fit"))
-fitMetrics = fitMetrics[grepl("SpUnspecific", fitMetrics)]
-fitMetrics = fitMetrics[grepl("thin_10", fitMetrics)]
-fitMetrics = fitMetrics[!grepl(".csv", fitMetrics)]
-fitMetrics = fitMetrics[!grepl("thin_100", fitMetrics)]
 
-#Non-species specific ones are a good barometer of fit.
-temp = readRDS(file = file.path(localDir, "/Outputs/Fit",fitMetrics[2]))
-print(temp)
+highestThin = "thin_10"
+highestChains = "chains_4"
+
+fitMetrics = fitMetrics[grepl(highestChains, fitMetrics)]
+fitMetrics = fitMetrics[grepl(highestThin, fitMetrics)]
+fitMetrics = fitMetrics[!grepl(".xls", fitMetrics)]
+fitMetrics = fitMetrics[!grepl(".csv", fitMetrics)]
+
+rm(highestThin)
+rm(highestChains)
 
 #Looped version. Non-species specific ones are a good guide barometer of fit. Loads in then saves as csv
 for (i in 1:length(fitMetrics)){
@@ -499,6 +517,9 @@ for (i in 1:length(fitMetrics)){
 
 ```
 
+
+
+###### UPDATE BELOW AT SOME POINTS TOMORROW!!!!!!!!!! ####
 
 Median fit metrics for each model are below for quick reference (correct as of 11.6.2024):
 
