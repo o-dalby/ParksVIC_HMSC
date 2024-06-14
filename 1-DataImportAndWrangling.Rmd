@@ -280,19 +280,20 @@ Primary and secondary swell heights = Primary swells occurs from far offshore an
 
 Data are in the form of one netcdf for each variable and year combination. So lots of looping is required here. Data available only span 1981 to 2020 so we will have to upper bound our analyses at 2020. We can still lower bound at 1992
 
+Note. As of 13.6.2024 meeting we now calculate the monthly mean not the seasonal mean. We also dropped the 95th as a measure of interest for temperature as it was taking too long to code.
 
 ```{r, eval = FALSE}
 #Prep work
-directoriesList = c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/SignifWaveHeight",
-                    "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PeakWaveFreq",
-                    "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/MeanWavePeriod",
-                    "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PartitionedWindWave",
-                    "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PartitionedPrimarySwell",
-                    "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PartitionedSecondarySwell")
+directoriesList = c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/SignifWaveHeight") #Only working with signif wave height right now
+                    #"Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PeakWaveFreq",
+                    #"Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/MeanWavePeriod",
+                    #"Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PartitionedWindWave",
+                    #"Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PartitionedPrimarySwell",
+                    #"Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/PartitionedSecondarySwell")
 
 years = seq(1992, 2020, 1) %>% as.character()
 
-metrics = c("hs", "fp", "t02", "phs0", "phs1", "phs2")
+metrics = c("hs") #, "fp", "t02", "phs0", "phs1", "phs2") #Currently only using signif wave height due to masive times needed to interpolate data
 
 #Start outer loop here. Controls the variable we are working with.
 for (j in 1:length(directoriesList)){
@@ -309,9 +310,8 @@ lat = ncvar_get(data, "latitude") #Get node lat
 lon = ncvar_get(data, "longitude") #Get node lon
 annualMean = matrix(data = NA, nrow = length(lat), ncol = length(years)) #Rows = number of nodes, Cols = N years assessed
 annualSD = matrix(data = NA, nrow = length(lat), ncol = length(years)) #Rows = number of nodes, Cols = N years assessed
-winterMean = matrix(data = NA, nrow = length(lat), ncol = length(years)) #Rows = number of nodes, Cols = N years assessed
-winterSD = matrix(data = NA, nrow = length(lat), ncol = length(years)) #Rows = number of nodes, Cols = N years assessed
-winter95th = matrix(data = NA, nrow = length(lat), ncol = length(years)) #Rows = number of nodes, Cols = N years assessed
+monthlyMean = matrix(data = NA, nrow = length(lat), ncol = length(years)*12) #Rows = number of nodes, Cols = N years assessed*12 months
+monthlySD = matrix(data = NA, nrow = length(lat), ncol = length(years)*12) #Rows = number of nodes, Cols = N years assessed*12 months
 
 #Close connection from initial netcdf4 access
 nc_close(data)
@@ -344,25 +344,20 @@ annualSD[,i] = dailyMean %>%
   dplyr::select(!c(date, month)) %>% 
   fsd(na.rm = TRUE)
 
-#And our seasonal measures - wave data want winter mean, SD, 95th. Returns vectors of values which can be slotted straight into holders.
-winterMean[,i] = dailyMean %>% 
+#And our seasonal measures - wave data want monthly mean, SD, 95th. Returns vectors of values which can be slotted straight into holders.
+monthlyMean[,((i*12)-11):(i*12)] = dailyMean %>% 
   dplyr::select(!date) %>%
-  filter(month %in% c(7,8,9)) %>% 
+  fgroup_by(month) %>% 
+  fmean() %>%
   dplyr::select(!month) %>% 
-  fmean()
+  t()
 
-winterSD[,i] = dailyMean %>% 
+monthlySD[,((i*12)-11):(i*12)] = dailyMean %>% 
   dplyr::select(!date) %>%
-  filter(month %in% c(7,8,9)) %>% 
+  fgroup_by(month) %>% 
+  fsd() %>% 
   dplyr::select(!month) %>% 
-  fsd()
-
-temp = dailyMean %>% #Quantiles function cant take dataframes so we need to loop again
-  dplyr::select(!date) %>%
-  filter(month %in% c(7,8,9)) %>% 
-  dplyr::select(!month)
-
-winter95th[,i] = sapply(temp, FUN = quantile, probs = c(0.95), na.rm = TRUE)
+  t()
 
 #Drop objects to save RAM, disconnect from netcdf, then close loop after final iteration
 nc_close(nc = data)
@@ -381,23 +376,18 @@ saveRDS(annualSD,
              directoriesList[j] %>% str_split(pattern = "/") %>% unlist() %>% dplyr::last(),
              "AnnualSD"))
 
-saveRDS(winterMean,
+saveRDS(monthlyMean,
         str_c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/",
              directoriesList[j] %>% str_split(pattern = "/") %>% unlist() %>% dplyr::last(),
-             "WinterMean"))
+             "MonthlyMean"))
 
-saveRDS(winterSD,
+saveRDS(monthlySD,
         str_c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/",
              directoriesList[j] %>% str_split(pattern = "/") %>% unlist() %>% dplyr::last(),
-             "WinterSD"))
-
-saveRDS(winter95th,
-        str_c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/",
-             directoriesList[j] %>% str_split(pattern = "/") %>% unlist() %>% dplyr::last(),
-             "Winter95th"))
+             "MonthlySD"))
 
 #Drop objects we'll remake at the start
-rm(annualMean, annualSD, winterMean, winterSD, winter95th)
+rm(annualMean, annualSD, monthlyMean, monthlySD)
 
 #Close outer loop
 }
@@ -405,24 +395,24 @@ rm(annualMean, annualSD, winterMean, winterSD, winter95th)
 ```
 
 We have the frequency for the peak wave data but the period for the mean wave data. Let's do a quick loop and remedy that and convert the mean wave period to the mean wave freq.
-
+Currently not used as we dont include wave period or frequency in our modelling due to time constraints with interpolations.
 
 ```{r, eval = FALSE}
-files = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves") %>% 
-  str_subset(pattern = "Period")
+#files = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves") %>% 
+#  str_subset(pattern = "Period")
 
-for (i in 1:length(files)){
+#for (i in 1:length(files)){
   
-  data = readRDS(str_c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/",
-             files[i]))
+#  data = readRDS(str_c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/",
+#             files[i]))
   
-  data = 1/data #Convert period to frequency
+#  data = 1/data #Convert period to frequency
   
-  saveRDS(data,
-          str_c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/",
-                files[i]) %>%
-            str_replace(pattern = "Period", replacement = "Freq"))
-}
+#  saveRDS(data,
+#          str_c("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/",
+#                files[i]) %>%
+#            str_replace(pattern = "Period", replacement = "Freq"))
+#}
 
 ```
 
@@ -433,6 +423,8 @@ Now, let's convert our datasets into XYZ format so they're easier to work with i
 data = nc_open("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/VICCoastWW3RawOutputs/Contemporary1981To2020/MeanWaveDirection/ww3.hindcast_1981_dir.nc") #Just an example nc, they all have identical dimensions
 latitude = ncvar_get(data, "latitude") #%>% data.frame() %>% rename(latitude = names(.)[1])
 longitude = ncvar_get(data, "longitude") #%>% data.frame() %>% rename(longitude = names(.)[1])
+year = seq(1992, 2020, 1) %>% as.character() #Define years we know are in the data
+yearmonth = seq(as.Date("1992-01-01", tz = "Australia/Victoria"), as.Date("2020-12-31", tz = "Australia/Victoria"), by = "month") %>% format("%Y-%m") #Define years and months
 nc_close(data)
 
 #Convert the location data to an sf object so we can get spatial. 
@@ -447,7 +439,6 @@ XYsf = data.frame(longitude = longitude,
 #Import the data we wish to interpolate.
 directoriesList = "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves/"
 files = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves") %>% str_subset(pattern = "XYZ", negate = TRUE)
-yearsAnnual = seq(1992, 2020)
 
 #Loop through each layer of the array and add the years data as a separate column
 for (j in 1:length(files)) {
@@ -469,7 +460,12 @@ for (j in 1:length(files)) {
   }
 
   #Rename Columns
-  names(Holder)[3:length(names(Holder))] = yearsAnnual[3:ncol(Holder)-2]
+  if(str_detect(files[j], pattern = "Monthly")){
+    print("Monthly Data Detected... renaming cols")
+    names(Holder)[3:length(names(Holder))] = unique(yearmonth)
+  } else {
+    print("Annual Data Detected...renaming cols")
+    names(Holder)[3:length(names(Holder))] = unique(year)[3:ncol(Holder)-2]}
   
   #Save
   saveRDS(Holder,
@@ -489,10 +485,9 @@ Now we've got the wave predictors wrangled and exported (but notably not interpo
 Description.....https://www.ncei.noaa.gov/access/metadata/landing-page/bin/iso?id=gov.noaa.ncdc:C00680.
 Download......https://psl.noaa.gov/data/gridded/data.noaa.oisst.v2.highres.html
 
-
 Shout out to Dr Alex Shute for handling the data export for these variables.
 
-Generally we can take the same steps as we did above for each of the wave variables. We want the mean and SD annually and the summer mean, sd, and 95th percentile.
+Generally we can take the same steps as we did above for each of the wave variables. But, given data are already monthly means we can save some coding. We want the mean and SD annually and the monthly mean. Given the data are already monthly means we cant get an associated SD. As with wave data, this change was implemented as of the 13.6.2024 meeting.
 
 ```{r, eval = FALSE}
 #Investigate the netcdfs first
@@ -544,37 +539,12 @@ saveRDS(AnnualSDHolder,
         "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/TemperatureAnnualSD")
 
 
-#Repeat for Summer equivalents - Dec -> Feb. Trickier as Dec is year X and Jan-Feb is YearX+1 but they need to sit together before being averaged.
-Summeryearmonth = yearmonth[month %>% as.numeric() %in% c(12, 1, 2)]
-
-summerArray = fullArray[, , which(yearmonth %in% Summeryearmonth)] #Retain only summer months from full array
-
-SummerMeanHolder = array(data = NA, dim = c(108, 80, year %>% unique() %>% length()-1))
-SummerSDHolder = array(data = NA, dim = c(108, 80, year %>% unique() %>% length()-1))
-Summer95thHolder = array(data = NA, dim = c(108, 80, year %>% unique() %>% length()-1))
-
-for (i in 1:(dim(summerArray)[3]/3)){ #Dividing by 3 gives us the number of summer period (43). One less than the years we have (44) as summer spans two years each year.
-  
-  print(str_c("Calculting year ", i))
-  
-  subset = summerArray[ , , (((i-1)*3)+1) : (((i-1)*3)+2)] #Load ith year of data in. Rows 1-3, 4-6, 7-9, 10-12, etc.
-  
-  SummerMeanHolder[, , i] = apply(subset, MARGIN = c(1,2), FUN = "mean", na.rm = TRUE) #Calc mean and store in ith layer
-  SummerSDHolder[, , i] = apply(subset, MARGIN = c(1,2), FUN = "sd", na.rm = TRUE) #Calc se and store in ith layer
-  Summer95thHolder[, , i] = apply(subset, MARGIN = c(1,2), FUN = "quantile", na.rm = TRUE, probs = c(0.95)) #Calc se and store in ith layer
-
-}
-
+#Repeat for monthly equivalents. Just the original netcdf data.
+monthlyMeanHolder = fullArray
 
 #Export Annual Measures
-saveRDS(SummerMeanHolder,
-        "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/TemperatureSummerMean")
-
-saveRDS(SummerSDHolder,
-        "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/TemperatureSummerSD")
-
-saveRDS(Summer95thHolder,
-        "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/TemperatureSummer95th")
+saveRDS(monthlyMeanHolder,
+        "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/TemperatureMonthlyMean")
 
 
 ```
@@ -586,6 +556,8 @@ Like we did for the wave data, let's now change our data into an XYZ format. Thi
 data = nc_open("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Temperature/noaa_sst_masked_southeast_aus.nc")
 latitude = data$dim$lat$vals #%>% data.frame() %>% rename(latitude = names(.)[1])
 longitude = data$dim$lon$vals #%>% data.frame() %>% rename(longitude = names(.)[1])
+yearmonth = ncvar_get(data, "time") %>% as.Date(origin = "1800-01-01 00:00:00", tz = "Australia/Victoria") %>% format("%Y-%m") %>% as.character()
+year = ncvar_get(data, "time") %>% as.Date(origin = "1800-01-01 00:00:00", tz = "Australia/Victoria") %>% format("%Y")
 nc_close(data)
 
 #Convert the location data to an sf object so we can get spatial.
@@ -600,7 +572,6 @@ XYsf = base::expand.grid(longitude, latitude) %>%
 #Import the data we wish to interpolate.
 directoriesList = "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature/"
 files = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature") %>% str_subset(pattern = "XYZ", negate = TRUE)
-yearsAnnual = seq(1981, 2024)
 
 #Loop through each layer of the array and add the years data as a separate column
 for (j in 1:length(files)) {
@@ -622,7 +593,12 @@ for (j in 1:length(files)) {
   }
 
   #Rename Columns
-  names(Holder)[3:length(names(Holder))] = yearsAnnual[3:ncol(Holder)-2]
+  if(str_detect(files[j], pattern = "Monthly")){
+    print("Monthly Data Detected... renaming cols")
+    names(Holder)[3:length(names(Holder))] = yearmonth
+  } else {
+    print("Annual Data Detected...renaming cols")
+    names(Holder)[3:length(names(Holder))] = unique(year)[3:ncol(Holder)-2]}
   
   #Save
   saveRDS(Holder,
@@ -706,8 +682,8 @@ identified = temp[temp$geometry == dupedGeom$geometry,] #PPB25 and PPB8 have ide
 #Now compute the occurrence matrix for fish then inverts
 
 fishCounts = fishRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")) %>% 
-  dplyr::select(site_code, site_name, location, year, survey_date, reporting_name, total) %>% 
-  group_by(site_name, site_code, survey_date, year, location, reporting_name) %>% 
+  dplyr::select(site_code, site_name, location, year, survey_date, species_name, total) %>% 
+  group_by(site_name, site_code, survey_date, year, location, species_name) %>% 
   summarise(count = sum(total, na.rm = TRUE)) %>% 
   pivot_wider(id_cols = c("site_name", "site_code", "survey_date", "location", "year"),
               names_from = "species_name",
@@ -716,8 +692,8 @@ fishCounts = fishRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")) %>
   dplyr::filter(!site_code == "PPB8") #Drop suspicious st leonards data
 
 invertCounts = invertRaw %>% mutate(year = as.Date(survey_date) %>% format("%Y")) %>% 
-  dplyr::select(site_code, site_name, location, year, survey_date, reporting_name, total) %>% 
-  group_by(site_name, site_code, survey_date, year, location, reporting_name) %>% 
+  dplyr::select(site_code, site_name, location, year, survey_date, species_name, total) %>% 
+  group_by(site_name, site_code, survey_date, year, location, species_name) %>% 
   summarise(count = sum(total, na.rm = TRUE)) %>% 
   pivot_wider(id_cols = c("site_name", "site_code", "survey_date", "location", "year"),
               names_from = "species_name",
@@ -790,7 +766,8 @@ templatePoly = templateRast %>% ext() %>% as.polygons(crs = "EPSG:7899") %>% st_
 variableList = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Temperature") %>% 
   str_subset(pattern = "XYZ", negate = TRUE) #Keep only those without. Five temperature measures to work through.
 
-focalYears = readRDS("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/CoarseLatLon/fishYears") %>% as.character()
+#Define focal years. From a meeting held on 13.6.2024 we know we only want to target 2002-2020. No point interpolating years we wont need.
+focalYears = seq(2002, 2020, 1) %>% as.character()
 
 for (j in 1:length(variableList)){
   
@@ -801,9 +778,13 @@ for (j in 1:length(variableList)){
   
   print(str_c("Working on ", filesList[j]))
   
-  ToInterpolate = readRDS(filesList[j]) %>% dplyr::select(c(longitude, latitude, any_of(focalYears))) %>%  #Read in jth file and drop any columns we dont have animal data for
+  ToInterpolate = readRDS(filesList[j]) %>%  #Read in jth file
   st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% 
     st_transform(crs = "EPSG:7899")
+  
+  focalCols = c(focalYears, "geometry")
+  
+  ToInterpolate[,str_detect(names(ToInterpolate), pattern = paste(focalCols, collapse = "|"))]
   
 for (i in 1:(ncol(ToInterpolate)-1)){ #Skip last col as it's geometry
  
@@ -854,7 +835,8 @@ variableList = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers
 
 ###NOTE - DUE TO THE CONSIDERABLE TIME TAKEN TO INTERPOLATE THESE DATA AND THE TIGHT TURN AROUNDS FOR THE PROJECT WE ONLY EXTRACT SIGNIF WAVE HEIGHT AS A FOCAL VARIABLE RIGHT NOW ###
 
-focalYears = readRDS("Z:/GIS-Res/Projects/ParksVic_Hmsc/ResponseData/CoarseLatLon/fishYears") %>% as.character()
+#Define focal years. From a meeting held on 13.6.2024 we know we only want to target 2002-2020. No point interpolating years we wont need.
+focalYears = seq(2002, 2020, 1) %>% as.character()
 
 #There are lots of wave data so we need to trim the data we import down to prevent computer crashing when we interpolate. Doing this outside the loops.
 #Makes a list of rows that are NA where the point falls outside of the polygon.
@@ -863,7 +845,7 @@ setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Wave
 filesList = list.files("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Waves") %>% 
                           str_subset(string = ., pattern = "XYZ", negate = FALSE)
 
-InsideCoastline = readRDS(filesList[1]) %>% dplyr::select(c(longitude, latitude, any_of(focalYears))) %>%  #Read in jth file and drop any columns we dont have animal data for
+InsideCoastline = readRDS(filesList[1]) %>% dplyr::select(c(longitude, latitude, any_of(contains(focalYears)))) %>% 
   st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% 
     st_transform(crs = "EPSG:7899") %>% 
     vect() %>% 
@@ -879,16 +861,20 @@ for (j in 1:length(variableList)){
   
   print(str_c("Working on ", filesList[j]))
   
-  ToInterpolate = readRDS(filesList[j]) %>% dplyr::select(c(longitude, latitude, any_of(focalYears))) %>%  #Read in jth file and drop any columns we dont have animal data for
+  ToInterpolate = readRDS(filesList[j]) %>%  #Read in jth file
   st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% 
     st_transform(crs = "EPSG:7899")
   
+  focalCols = c(focalYears, "geometry")
+  
+  ToInterpolate[,str_detect(names(ToInterpolate), pattern = paste(focalCols, collapse = "|"))]
+  
   ToInterpolate = ToInterpolate[!is.na(InsideCoastline),] #Drop rows outside of focal polygon.
   
-  #Point count is still super high for the time we have to interpolate. Let's subset with a spatially balanced approach to 30%.
+  #Point count is still super high for the time we have to interpolate. Let's subset with a spatially balanced approach to 25%.
   set.seed(1995) #Standardise subsampling randomness
   N = nrow(ToInterpolate)
-  n = N/3
+  n = N/4
   p = rep(n/N,N) #Uniform inclprobs
   x = matrix(runif(N * 2), ncol = 2);
   s = cube(p, x)
@@ -925,9 +911,6 @@ for (i in 1:(ncol(ToInterpolate)-1)){ #Skip last col as it's geometry
 }
   
 }
-
-
-
 
 
 ```
@@ -1008,6 +991,7 @@ writeRaster(protectRast, "mpaProtectionRast.tif", overwrite = TRUE) #Export
 
 
 ```
+
 Now we can make stacked rasters which correspond to each year of data. These will be very useful for future modelling and prediction.
 
 We can then ammend the data to the associated year-specifc rows in the fish and invert datasets.
@@ -1119,6 +1103,13 @@ fishData = fishData %>%
 
 invertData = invertData %>% 
   relocate(YSince2002, .after = year)
+
+#A few surveys were apparently undertaken in >50m of water. Let's drop these. retain anything 30m and above.
+fishData = fishData %>% 
+  filter(Depth >= -30)
+
+invertData= invertData %>% 
+  filter(Depth >= -30)
 
 setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/Modelling/ResponseCSVs")
 write.csv(fishData, "fishDataFinal.csv", row.names = FALSE)
