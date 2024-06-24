@@ -38,37 +38,35 @@ fishData = read.csv(file.path(data.directory, "fishDataFinal.csv"), stringsAsFac
 invertData = read.csv(file.path(data.directory, "invertDataFinal.csv"), stringsAsFactors = TRUE)
 
 #Check intercor of all environmental predictors. Looking for Pearsons >0.7.
-cor1 = fishData[,13:32] %>% cor(method = "pearson")
+cor1 = fishData[,13:29] %>% cor(method = "pearson")
 corrplot(cor1, method = "number", type = "lower", diag = FALSE)
 
 #adjSD doesnt play well with vrm or qslope. The latter two dont play together either. All wave measures are >0.7. Temp doesn't look much better.
-#Try again with just seasonal measure and SD for wave and temp. And drop Qslope and vrm. Mean for temp as longer times are needed to impact physiological stress but waves get 95th as a single big wave might do damage.
-cor1 = fishData[,c(13:18, 20:21, 25, 27, 31, 32)] %>% cor(method = "pearson")
+#Try again with just monthly measure and SD for wave and temp. And drop Qslope and vrm. 
+cor1 = fishData[,c(13:18, 20:21, 25, 26,29)] %>% cor(method = "pearson")
 corrplot(cor1, method = "number", type = "lower", diag = FALSE)
 
-#Terrains are better but the waves still trip us up. Repeat for just seasonal mean for temp and seasonal 95th for waves.
-cor1 = fishData[,c(13:18, 20:21, 25, 31)] %>% cor(method = "pearson")
+#Terrains are better but the waves still trip us up. Unsurprisingly monthly mean is correlated with the monthly SD. Dropping the latter.
+cor1 = fishData[,c(13:18, 20:21, 25, 29)] %>% cor(method = "pearson")
 corrplot(cor1, method = "number", type = "lower", diag = FALSE)
 
 #Lets run with that.
-fishData = fishData[,c(1:12, 13:18, 20:21, 25, 31, 33:279)]
+fishData = fishData[,c(1:12, 13:18, 20:21, 25, 29, 30:279)]
 
 #Repeat for inverts.....
 #Check intercor of all environmental predictors. Looking for Pearsons <0.7.
-cor1 = invertData[,13:32] %>% cor(method = "pearson")
+cor1 = invertData[,13:29] %>% cor(method = "pearson")
 corrplot(cor1, method = "number", type = "lower", diag = FALSE)
 
-#adjSD doesnt play well with vrm or qslope. The latter two dont play together either. All wave measures are >0.7. Temp doesn't look much better.
-#Try again with just seasonal measure and SD for wave and temp. And drop Qslope and vrm. Mean for temp as longer times are needed to impact physiological stress but waves get 95th as a single big wave might do damage.
-cor1 = invertData[,c(13:18, 20:21, 25, 27, 31, 32)] %>% cor(method = "pearson")
+cor1 = invertData[,c(13:18, 20:21, 25, 26,29)] %>% cor(method = "pearson")
 corrplot(cor1, method = "number", type = "lower", diag = FALSE)
 
 #Terrains are better but the waves still trip us up. Repeat for just seasonal mean for temp and seasonal 95th for waves.
-cor1 = invertData[,c(13:18, 20:21, 25, 31)] %>% cor(method = "pearson")
+cor1 = invertData[,c(13:18, 20:21, 25, 29)] %>% cor(method = "pearson")
 corrplot(cor1, method = "number", type = "lower", diag = FALSE)
 
 #Lets run with that. Unsurprisingly identical process as I think the RSL survey data take place at the same locales. Marginally different col numbers mind. Different N species found.
-invertData = invertData[,c(1:12, 13:18, 20:21, 25, 31, 33:284)]
+invertData = invertData[,c(1:12, 13:18, 20:21, 25, 29, 30:285)]
 
 ```
 
@@ -85,23 +83,20 @@ invertData$year = as.factor(invertData$year)
 
 ```
 
-
-Extract X matrix - environmental variables. Time included as an integer here so we can see a linear effect not the comparative effect associated with including it as a factor. Protection status included as a factor.
+Extract X matrix - environmental variables. Time included as T since 2002 (when the MPAs were established). Protection status included as a factor. As is bioregion.
 
 ```{r}
-fishX = fishData[,c(3,4,8,13:22)]
-fishX$year = as.integer(fishX$year) #Set year back to int
+fishX = fishData[,c(4,7,8,13:22)]
 
-invertX = invertData[,c(3,4,8,13:22)]
-invertX$year = as.integer(invertX$year) #Set year back to int
+invertX = invertData[,c(4,7,8,13:22)]
 
 ```
 
 Extract Y matrix - occurences and abundances.
 
 ```{r}
-fishY = (fishData[,23:269])
-invertY = (invertData[,23:273])
+fishY = (fishData[,23:272])
+invertY = (invertData[,23:278])
 
 #Check for absent or ubiquitous species. Fact it returns a value tells us we have no NAs in our rows too
 range(colMeans(fishY>0))
@@ -112,10 +107,10 @@ min(colSums(invertY>0)) #Some inverts weren't found in any samples
 
 #Check the number of rare taxa (those present in less than 5% of samples)
 rareFish <- which(colSums(fishY>0)<48) #48 is ~5% of samples
-length(rareFish) #189 rare fish
+length(rareFish) #192 rare fish
 
 rareInvert <- which(colSums(invertY>0)<49) #49 is ~5% of samples
-length(rareInvert) #205 rare inverts
+length(rareInvert) #210 rare inverts
 
 #Check the number of overabundant taxa (those present in greater than 95% of samples)
 ovabunFish <- which(colSums(fishY>0)>920) #920 is ~95% of samples
@@ -128,7 +123,7 @@ length(ovabunInvert) #0 overly abundant inverts
 fishY <- fishY[ , -c(rareFish)]
 invertY <- invertY[ , -c(rareInvert)]
 
-#Dropping the rare species leaves 48 fish and 46 inverts.
+#Dropping the rare species leaves 58 fish and 46 inverts.
 
 #Assess abundance histogram, prevalence, and log abundance conditional on presence
 hist(colMeans(fishY), nclass = 35, main = "Fish - Mean Abun per sample unit") #Most fish are in super low densities (<6 abundance per sample) per sample unit but 8-10 (25% of all fish left in the data) have higher abundance spanning up 35 individuals per sample on average. Huge 0 spike here.
@@ -170,34 +165,35 @@ str(invertY)
 
 ### 6) Define models
 
-Now we can begin to define some models. At present, for the sake of a meeting next week, we ignore adding in a spatial random effect and we ignore the issues with imcra and region we are having. Let's keep it simple for now. We also ignore any phylogenetic aspects. 7.6.24.
+Now we can begin to define some models. 
 
 ```{r}
 #No need to split Xformula between inverts and fish as they get the same structure. Note the code doesnt actually call a specific object, it just holds variable names.
 #Define environmental drivers.
 XFormula <- ~ YSince2002 +
+  Bioregion +
   adjSD + #Maybe needs to be asymtotic?
   bpi +
-  qeastness +
-  qnorthness +
-  planc +
+  #qeastness + #Variables hashed out dropped as of 13.6.2024 meeting.
+  #qnorthness +
+  #planc +
   profc +
-  twistc +
+  #twistc +
   Depth +
-  poly(SignifWaveHeightWinter95th, degree = 2, raw = TRUE) +
-  poly(TemperatureSummerMean, degree = 2, raw = TRUE)+  #Second order poly allows for intermediate thermal optimum. E.g. Some species like it warm, not hot, not cold. Can't do that with linear feature. A linear feature assumes hotter = better.
+  poly(SignifWaveHeightMonthlyMean, degree = 2, raw = TRUE) + #Change to linear as of 13.6.2024 meeting???
+  poly(TemperatureMonthlyMean, degree = 2, raw = TRUE)+  #Second order poly allows for intermediate thermal optimum. E.g. Some species like it warm, not hot, not cold. Can't do that with linear feature. A linear feature assumes hotter = better.
   MPAProtectStat
   
-
+#Fish
 #Define study matrix. Study type factors. Random effects not included here - dealt with later on!
 #Looks like to make a random effect the associated study design variable must be included at this stage. E.g. tell hmsc it is a component of the study design, then inform it it's what we want to base our random effect on.
 #Needs defining for the fish and inverts separately due to the different number of rows.
 
 #Defining siteID as a random effect, protection as a fixed effect factor, and year as a random effect.
-fishStudyDesign <- data.frame(Fyear = fishS$year, protection = fishS$MPAProtectStat, siteID = fishS$site_name)
+fishStudyDesign <- data.frame(Fyear = fishS$year, protection = fishS$MPAProtectStat, siteID = fishS$site_name, bioregion = fishS$Bioregion)
 
 #Sorting out random effects
-rL.fishYear <- HmscRandomLevel(units = levels(fishStudyDesign$Fyear)) #Tell hmsc that year needs to be treated as random
+rL.fishYear <- HmscRandomLevel(units = levels(fishStudyDesign$Fyear)) #Tell hmsc that factor variable year needs to be treated as random
 
 #Define spatial random effect - fish
 xy = as.matrix(cbind(fishS$longitude, fishS$latitude))
@@ -205,12 +201,12 @@ rownames(xy)= fishS$site_name #Set row names to Site ID
 xy = xy[!duplicated(row.names(xy)),]#Ditch duplicate locales as we have repeat sampling
 colnames(xy)=c("x-coordinate","y-coordinate")
 
-rL.fish.nngp <- HmscRandomLevel(sData = xy, longlat = FALSE, sMethod = 'NNGP',nNeighbours = 10)
-rL.fish.nngp <- setPriors(rL.fish.nngp,nfMin=1,nfMax=1)
+rL.fish.nngp <- HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP',nNeighbours = 10)
+#rL.fish.nngp <- setPriors(rL.fish.nngp,nfMin=1,nfMax=1) Currently letting the model run with default spatial priors. 24.6.2024
 
 
 #Repeat for inverts
-invertStudyDesign <- data.frame(Fyear = invertS$year, protection = invertS$MPAProtectStat, siteID = invertS$site_name)
+invertStudyDesign <- data.frame(Fyear = invertS$year, protection = invertS$MPAProtectStat, siteID = invertS$site_name, siteID = invertS$site_name, bioregion = invertS$Bioregion)
 rL.invertYear <- HmscRandomLevel(units = levels(invertStudyDesign$Fyear)) #Tell hmsc that year needs to be treated as random
 
 xy = as.matrix(cbind(invertS$longitude, invertS$latitude))
@@ -218,8 +214,8 @@ rownames(xy)= invertS$site_name #Set row names to Site ID
 xy = xy[!duplicated(row.names(xy)),]#Ditch duplicate locales as we have repeat sampling
 colnames(xy)=c("x-coordinate","y-coordinate")
 
-rL.invert.nngp <- HmscRandomLevel(sData = xy, longlat = FALSE, sMethod = 'NNGP',nNeighbours = 10)
-rL.invert.nngp <- setPriors(rL.invert.nngp,nfMin=1,nfMax=1)
+rL.invert.nngp <- HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP',nNeighbours = 10)
+#rL.invert.nngp <- setPriors(rL.invert.nngp, nfMin=1,nfMax=1) #Again, letting spatial priors be default at this point
 
 #Define Y matrices. Needs one for pres/abs and then another to predict the abundance. Needs defining for fish and inverts
 #Define for fish
@@ -236,7 +232,7 @@ invertYabu=log(invertYabu) #Calcs log transformed abundance where presence == 1
 
 ```
 
-Finally we can define our models. Nothing fancy here yet. Just a pres/abs and an abundance model for each of the fish and invert datasets.
+Finally we can define our models. 
 
 ```{r}
 mF1 <- Hmsc(Y= fishYpa,
@@ -286,7 +282,7 @@ saveRDS(models, file = file.path(unfitted.model.directory, "PostMeetingModelsJun
 
 ### 7) Fit models
 
-Now we fit the models iteratively over a loop of increasing thinning numbers. Each one takes longer than the last. But the longer ones might make better predictions? Note, need to upskill on this component.
+Now we fit the models iteratively over a loop of increasing thinning numbers. Each one takes longer than the last. But the longer ones might make better predictions.
 
 samples = N MCMC samples to be collected from each chain.
 transient = number of MCMC steps to leave as spin up. E.g. beyond this number we start using the data to get posterior samples
@@ -310,7 +306,7 @@ for (i in 1:length(models)){
   
   focalModel = models[[i]] #Get ith model from list
   
-for (thin in c(1, 10)){ #100,1000))
+for (thin in c(1,10)){ #100,1000))
   
   print(paste("With thinning = ", thin))
   
@@ -376,6 +372,10 @@ for (i in 1:length(fittedModels)){
   #Plot em
   hist(ess.beta)
   hist(psrf.beta)
+  
+  #Grab effective spatial range estimated by spatial latent effects
+  print("Estimated Spatial Range for spatial latent effect")
+  summary(mpost$Alpha[[1]])
 
 }
 
@@ -517,21 +517,7 @@ for (i in 1:length(fitMetrics)){
 
 ```
 
+We now have species specific, and overall, measures of model fit we can use to assess the models.
 
-
-###### UPDATE BELOW AT SOME POINTS TOMORROW!!!!!!!!!! ####
-
-Median fit metrics for each model are below for quick reference (correct as of 11.6.2024):
-
-- FISH PA - Explanatory (RMSE = 0.3, AUC = 0.89, TjurR2 = 0.35) Predictive (RMSE = 0.33, AUC = 0.84, TjurR2 = 0.29)
-- FISH ACOP - Explanatory (RMSE = 0.76, R2 = 0.28) Predictive (RMSE = 0.85, R2 = 0.12)
-
-- INVERT PA - Explanatory (RMSE = 0.29, AUC = 0.89, TjurR2 = 0.27) Predictive (RMSE = 0.30, AUC = 0.83, TjurR2 = 0.22)
-- INVERT ACOP - Explanatory (RMSE = 0.69, R2 = 0.28) Predictive (RMSE = 0.77, R2 = 0.10).
-
-Some fit based trends we can see are:
-- Presence absence models had a better fit than their ACOP counterparts. Perhaps the residual skew in the abundance record warrants additions transformations (remember we told HMSC that the distribution was normal but perhaps the leftover skew mucks around with this)? Maybe we're missing key predictors or our models structure is wonky?
-- Fish and invert models were generally comparable in terms of model fit. Although fish models had slightly higher Tjur's R2 when comparing the presence absence models.
-
-In the next set of codes we'll look at the estimates of each parameter to see what is driving this model fit.
+In the next set of codes we'll look at the estimates of each parameter to see what is driving this model fit. And begin to look at trends between the response variables and their predictors.
 
