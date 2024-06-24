@@ -1022,7 +1022,6 @@ fishDataSf = fishDataSf %>% filter(year %in% seq(2002, 2020))
 #And repeat for invert data
 invertDataSf = invertDataSf %>% filter(year %in% seq(2002, 2020))
 
-
 #Now we can begin extracting the data - year only first
 years = fishDataSf$year %>% unique() %>% sort() #Get years to focus on in ascending order. Previously we have demonstrated that the years between fish and inverts are identical.
 fishlist = list() #Holder for our fish dfs
