@@ -784,7 +784,7 @@ for (j in 1:length(variableList)){
   
   focalCols = c(focalYears, "geometry")
   
-  ToInterpolate[,str_detect(names(ToInterpolate), pattern = paste(focalCols, collapse = "|"))]
+  ToInterpolate = ToInterpolate[,str_detect(names(ToInterpolate), pattern = paste(focalCols, collapse = "|"))] #Drop cols we dont want to keep
   
 for (i in 1:(ncol(ToInterpolate)-1)){ #Skip last col as it's geometry
  
@@ -867,7 +867,7 @@ for (j in 1:length(variableList)){
   
   focalCols = c(focalYears, "geometry")
   
-  ToInterpolate[,str_detect(names(ToInterpolate), pattern = paste(focalCols, collapse = "|"))]
+  ToInterpolate = ToInterpolate[,str_detect(names(ToInterpolate), pattern = paste(focalCols, collapse = "|"))] #Drop cols we dont want to keep
   
   ToInterpolate = ToInterpolate[!is.na(InsideCoastline),] #Drop rows outside of focal polygon.
   
@@ -1016,12 +1016,14 @@ invertDataSf = invertData %>% st_as_sf(coords = c("longitude", "latitude"), crs 
 print(nrow(fishData) - nrow(fishDataSf))
 print(nrow(invertData) - nrow(invertDataSf))
 
-#Note we only have wave data up until 2020 so lets drop any fish data beyond this
-fishDataSf = fishDataSf %>% filter(year %in% seq(1998, 2020))
+#Note we only have wave data up until 2020 so lets drop any fish/invert data beyond this. We also only want data starting from 2002 as this is when the focal MPAs were established.
+fishDataSf = fishDataSf %>% filter(year %in% seq(2002, 2020))
 
 #And repeat for invert data
-invertDataSf = invertDataSf %>% filter(year %in% seq(1998, 2020))
+invertDataSf = invertDataSf %>% filter(year %in% seq(2002, 2020))
 
+
+#Now we can begin extracting the data - year only first
 years = fishDataSf$year %>% unique() %>% sort() #Get years to focus on in ascending order. Previously we have demonstrated that the years between fish and inverts are identical.
 fishlist = list() #Holder for our fish dfs
 invertlist = list() #Holder for our invert dfs
@@ -1033,7 +1035,7 @@ for (i in years){
     #Import year i rasters
   setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Rasters")
   stack1 = rast(
-    list.files() %>% str_subset(pattern = as.character(i))) #Get wave and temp rasters
+    list.files() %>% str_subset(pattern = as.character(i)) %>% str_subset(pattern = "Annual")) #Get wave and temp rasters. But only the year-specific ones. Not the monthly ones.
   
   setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/EcologicalClassifications")
   stack2 = rast(
@@ -1046,7 +1048,7 @@ for (i in years){
     str_subset(pattern = ".aux.xml", negate = TRUE))
     
   stack = c(stack1, stack2, stack3)
-  names(stack)[23] = "Depth" #Rename to something simpler
+  names(stack)[17] = "Depth" #Rename to something simpler
   names(stack) = names(stack) %>% str_replace(pattern = i %>% as.character(), replacement = "")
   
   stack = mask(stack, stack) #If one layer has an NA in a given cell locale make it NA in all layers
@@ -1057,31 +1059,33 @@ for (i in years){
   setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/Modelling/PredictorStacks")
   writeRaster(stack, str_c("PredictorStack", i, ".tif"), overwrite = TRUE)
    
-  #Append to relevant year of fish data. i-2009 converts our active year to 1, 2, 3 etc  
-  fishlist[[i-1997]] = fishDataSf %>% filter(year == i) %>% 
+  #Append to relevant year of fish data. i-2001 converts our active year to 1, 2, 3 etc  
+  fishlist[[i-2001]] = fishDataSf %>% filter(year == i) %>% 
     vect() %>% 
     terra::extract(y = .,
                    x = stack,
                    bind = TRUE) %>% 
     st_as_sf() %>% 
+    st_transform(crs = "EPSG:4326") %>% 
     mutate(longitude = st_coordinates(.)[,1],
            latitude = st_coordinates(.)[,2]) %>% 
     st_drop_geometry() %>% 
     dplyr::select(-c(X,)) %>% 
-    dplyr::select(1,2,3,4,5,263,264,265,266,277,278,267:276,253:262,6:253) #Reorder columns to something logical
+    dplyr::select(1,2,3,4,5,260:263,274,275,264:273,256:259,6:255) #Reorder columns to something logical
   
-  #Append to relevant year of invert data. i-2009 converts our active year to 1, 2, 3 etc  
-  invertlist[[i-1997]] = invertDataSf %>% filter(year == i) %>% 
+  #Append to relevant year of invert data. i-2001 converts our active year to 1, 2, 3 etc  
+  invertlist[[i-2001]] = invertDataSf %>% filter(year == i) %>% 
     vect() %>% 
     terra::extract(y = .,
                    x = stack,
                    bind = TRUE) %>% 
     st_as_sf() %>% 
+    st_transform(crs = "EPSG:4326") %>% 
     mutate(longitude = st_coordinates(.)[,1],
            latitude = st_coordinates(.)[,2]) %>% 
     st_drop_geometry() %>% 
     dplyr::select(-c(X,)) %>% 
-    dplyr::select(1,2,3,4,5,268,269,270,271,282,283,272:281,258:267,6:258) #Reorder columns to something logical
+    dplyr::select(1,2,3,4,5,266:269,280,281,270:279,262:265,6:261) #Reorder columns to something logical
   
   
 }
@@ -1089,9 +1093,80 @@ for (i in years){
 fishData = do.call(rbind, fishlist)
 invertData = do.call(rbind, invertlist)
 
-#After some meetings 12.6.2024 we now only model data from 2002 onwards.
-fishData = fishData[fishData$year %in% seq(2002, 2020, 1),]
-invertData = invertData[invertData$year %in% seq(2002, 2020, 1),]
+#Now we have a another loop that first check which year and month combination each row was taken from and grabs the associated monthly temp and wave force.
+#Fishdata
+fishlist = list() #Make new empty holder
+
+fishDataSf = fishData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") #Convert back to SF
+
+yearMonth = fishData$survey_date %>% as.Date(, tz = "Australia/Victoria") %>% format("%Y-%m") %>% unique() %>% sort() #Grab each unique year month combo in the RSL data and order them
+
+for (i in 1:length(yearMonth)){
+
+  print(paste("Working on", yearMonth[i]))
+  
+  #Grab rasters that correspond to that year month
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Rasters")
+  stack = rast(
+    list.files() %>% str_subset(pattern = yearMonth[i])) #Get wave and temp rasters. But only the ones that match the unique year-month combo we are iterating on right now.
+  
+  names(stack) = c("SignifWaveHeightMonthlyMean",
+                   "SignifWaveHeightMonthlySD",
+                   "TemperatureMonthlyMean")
+  
+  #Filter all rows where the survey year matches the i entry in our yearMonth object then do the same terra::extractions as we did before
+  fishlist[[i]] = 
+    fishDataSf[format(as.Date(fishDataSf$survey_date, tz = "Australia/Victoria"), "%Y-%m") == yearMonth[i],] %>% 
+    vect() %>% 
+    terra::extract(y = .,
+                   x = stack,
+                   bind = TRUE) %>% 
+    st_as_sf() %>% 
+    st_transform(crs = "EPSG:4326") %>% 
+    mutate(longitude = st_coordinates(.)[,1],
+           latitude = st_coordinates(.)[,2]) %>% 
+    st_drop_geometry() %>% 
+    dplyr::select(1:9,277:278,10:19,20,21,274,275,22,23,276,24:278)
+}
+
+fishData = do.call(rbind, fishlist) #Put all the rows back together now they have all the data extracted
+
+#REPEAT FOR INVERTS
+invertlist = list() #Make new empty holder
+
+invertDataSf = invertData %>% st_as_sf(coords = c("longitude", "latitude"), crs = "EPSG:4326") %>% st_transform(crs = "EPSG:7899") #Convert back to SF
+
+yearMonth = invertData$survey_date %>% as.Date(, tz = "Australia/Victoria") %>% format("%Y-%m") %>% unique() %>% sort() #Grab each unique year month combo in the RSL data and order them
+
+for (i in 1:length(yearMonth)){
+
+  print(paste("Working on", yearMonth[i]))
+  
+  #Grab rasters that correspond to that year month
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Rasters")
+  stack = rast(
+    list.files() %>% str_subset(pattern = yearMonth[i])) #Get wave and temp rasters. But only the ones that match the unique year-month combo we are iterating on right now.
+  
+  names(stack) = c("SignifWaveHeightMonthlyMean",
+                   "SignifWaveHeightMonthlySD",
+                   "TemperatureMonthlyMean")
+  
+  #Filter all rows where the survey year matches the i entry in our yearMonth object then do the same terra::extractions as we did before
+  invertlist[[i]] = 
+    invertDataSf[format(as.Date(invertDataSf$survey_date, tz = "Australia/Victoria"), "%Y-%m") == yearMonth[i],] %>% 
+    vect() %>% 
+    terra::extract(y = .,
+                   x = stack,
+                   bind = TRUE) %>% 
+    st_as_sf() %>% 
+    st_transform(crs = "EPSG:4326") %>% 
+    mutate(longitude = st_coordinates(.)[,1],
+           latitude = st_coordinates(.)[,2]) %>% 
+    st_drop_geometry() %>% 
+    dplyr::select(1:9,283:284,10:19,20,21,280,281,22,23,282,24:279)
+}
+
+invertData = do.call(rbind, invertlist) #Put all the rows back together now they have all the data extracted
 
 #We also want a new variable time since 2002 (2002 is when the parks became protected).
 fishData$YSince2002 = fishData$year - 2002
