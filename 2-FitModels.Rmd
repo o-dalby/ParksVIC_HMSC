@@ -144,9 +144,9 @@ From the above we can see that both our fish and invert data have strongly posit
 Extract S matrix - Study design aspects.
 
 ```{r}
-fishS = fishData[,c(1,3,7,8,9,10,11,12)] #Grab site name, sampling, year, imcra bioregion, MPA protection status (protected or not?), the MPA name the points are associated with, and the broader geographic region as study design components. We may not use all of these in the model but at least they're there. Also grab lat longs
+fishS = fishData[,c(1,3,6,7,8,9,10,11,12)] #Grab site name, sampling, year, imcra bioregion, MPA protection status (protected or not?), the MPA name the points are associated with, and the broader geographic region as study design components. We may not use all of these in the model but at least they're there. Also grab lat longs. As of 1.7.24 we also grab the location variable. This is the biounit/rough area the site is present in (PPB, The prom, etc).
 
-invertS = invertData[, c(1,3,7,8,9,10,11,12)] #As above
+invertS = invertData[, c(1,3,6,7,8,9,10,11,12)] #As above
 
 #These are all factor variables
 ```
@@ -190,10 +190,12 @@ XFormula <- ~ YSince2002 +
 #Needs defining for the fish and inverts separately due to the different number of rows.
 
 #Defining siteID as a random effect, protection as a fixed effect factor, and year as a random effect.
-fishStudyDesign <- data.frame(Fyear = fishS$year, protection = fishS$MPAProtectStat, siteID = fishS$site_name, bioregion = fishS$Bioregion)
+fishStudyDesign <- data.frame(Fyear = fishS$year, protection = fishS$MPAProtectStat, siteID = fishS$site_name, bioregion = fishS$Bioregion, biounit = fishS$location)
 
 #Sorting out random effects
 rL.fishYear <- HmscRandomLevel(units = levels(fishStudyDesign$Fyear)) #Tell hmsc that factor variable year needs to be treated as random
+rL.fishSite <- HmscRandomLevel(units = levels(fishStudyDesign$siteID)) #Alternative random effect of site ID
+rL.fishBioUnit <- HmscRandomLevel(units = levels(fishStudyDesign$biounit)) #Alternative random effect of biounit (the broader area - larger than a site but smaller than a bioregion)
 
 #Define spatial random effect - fish
 xy = as.matrix(cbind(fishS$longitude, fishS$latitude))
@@ -201,21 +203,26 @@ rownames(xy)= fishS$site_name #Set row names to Site ID
 xy = xy[!duplicated(row.names(xy)),]#Ditch duplicate locales as we have repeat sampling
 colnames(xy)=c("x-coordinate","y-coordinate")
 
-rL.fish.nngp <- HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP',nNeighbours = 10)
-#rL.fish.nngp <- setPriors(rL.fish.nngp,nfMin=1,nfMax=1) Currently letting the model run with default spatial priors. 24.6.2024
+rL.fish.nngp <- HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP',nNeighbours = 3)
+#rL.fish.nngp <- setPriors(rL.fish.nngp,nfMin=1,nfMax=2)
 
+rL.fish.gp <- HmscRandomLevel(sData = xy, longlat = TRUE) #Default spatial method alternative
 
 #Repeat for inverts
-invertStudyDesign <- data.frame(Fyear = invertS$year, protection = invertS$MPAProtectStat, siteID = invertS$site_name, siteID = invertS$site_name, bioregion = invertS$Bioregion)
+invertStudyDesign <- data.frame(Fyear = invertS$year, protection = invertS$MPAProtectStat, siteID = invertS$site_name, bioregion = invertS$Bioregion, biounit = invertS$location)
 rL.invertYear <- HmscRandomLevel(units = levels(invertStudyDesign$Fyear)) #Tell hmsc that year needs to be treated as random
+rL.invertSite <- HmscRandomLevel(units = levels(invertStudyDesign$siteID)) #Alternative random effect of site ID
+rL.invertBioUnit <- HmscRandomLevel(units = levels(invertStudyDesign$biounit)) #Alternative random effect of biounit (the broader area - larger than a site but smaller than a bioregion)
 
 xy = as.matrix(cbind(invertS$longitude, invertS$latitude))
 rownames(xy)= invertS$site_name #Set row names to Site ID
 xy = xy[!duplicated(row.names(xy)),]#Ditch duplicate locales as we have repeat sampling
 colnames(xy)=c("x-coordinate","y-coordinate")
 
-rL.invert.nngp <- HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP',nNeighbours = 10)
-#rL.invert.nngp <- setPriors(rL.invert.nngp, nfMin=1,nfMax=1) #Again, letting spatial priors be default at this point
+rL.invert.nngp <- HmscRandomLevel(sData = xy, longlat = TRUE, sMethod = 'NNGP',nNeighbours = 3)
+#rL.invert.nngp <- setPriors(rL.invert.nngp, nfMin=1,nfMax=2)
+
+rL.invert.gp <- HmscRandomLevel(sData = xy, longlat = TRUE) #Default spatial method alternative
 
 #Define Y matrices. Needs one for pres/abs and then another to predict the abundance. Needs defining for fish and inverts
 #Define for fish
@@ -241,7 +248,8 @@ mF1 <- Hmsc(Y= fishYpa,
             distr = "probit",
             studyDesign = fishStudyDesign,
             ranLevels = list("Fyear" = rL.fishYear, #Names of random variables defined here must match cols in studydesign matrix
-                             "siteID" = rL.fish.nngp)
+                             "biounit" = rL.fishBioUnit)
+                             #"siteID" = rL.fish.nngp)
             )
 
 mF2 <- Hmsc(Y= fishYabu, YScale = TRUE,
@@ -250,7 +258,8 @@ mF2 <- Hmsc(Y= fishYabu, YScale = TRUE,
             distr = "normal",
             studyDesign = fishStudyDesign,
             ranLevels = list("Fyear" = rL.fishYear,
-                             "siteID" = rL.fish.nngp)
+                             "biounit" = rL.fishBioUnit)
+                             #"siteID" = rL.fish.nngp)
             )
 
 mI1 <- Hmsc(Y= invertYpa,
@@ -259,7 +268,8 @@ mI1 <- Hmsc(Y= invertYpa,
             distr = "probit",
             studyDesign = invertStudyDesign,
             ranLevels = list("Fyear" = rL.invertYear,
-                             "siteID" = rL.invert.nngp)
+                             "biounit" = rL.invertBioUnit)
+                             #"siteID" = rL.invert.nngp)
             )
 
 mI2 <- Hmsc(Y= invertYabu, YScale = TRUE,
@@ -268,7 +278,8 @@ mI2 <- Hmsc(Y= invertYabu, YScale = TRUE,
             distr = "normal",
             studyDesign = invertStudyDesign,
             ranLevels = list("Fyear" = rL.invertYear,
-                             "siteID" = rL.invert.nngp)
+                             "biounit" = rL.invertBioUnit)
+                             #"siteID" = rL.invert.nngp)
             )
 
 models <- list(mF1, mF2, mI1, mI2)
@@ -373,9 +384,24 @@ for (i in 1:length(fittedModels)){
   hist(ess.beta)
   hist(psrf.beta)
   
+  #What model do we have?
+  print(paste("Posterior omega parameters for", fittedModels[i]))
+  
+  #Estimate Omegas - random effects
+  ess.omega = effectiveSize(mpost$Omega[[1]])
+  psrf.omega = gelman.diag(mpost$Omega[[1]], multivariate=FALSE)$psrf
+  print("Efffective Sample Size - ideally as big as possible")
+  print(summary(ess.omega))
+  print("Potential Scale Reduction Factor - ideally as close to 1 as possible")
+  print(summary(psrf.omega))
+  
+  #Plot em
+  hist(ess.omega)
+  hist(psrf.omega)
+  
   #Grab effective spatial range estimated by spatial latent effects
   print("Estimated Spatial Range for spatial latent effect")
-  summary(mpost$Alpha[[1]])
+  summary(mpost$Alpha[[1]]) %>% print()
 
 }
 

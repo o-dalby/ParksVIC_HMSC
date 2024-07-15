@@ -16,6 +16,16 @@ set.seed(1995)
 ```{r}
 library(Hmsc)
 library(writexl)
+library(stringr)
+library(colorspace)
+library(corrplot)
+library(tidyverse)
+library(patchwork)
+library(terra)
+library(sf)
+library(R.utils)
+library(reshape2)
+library(abind)
 ```
 
 ### 3) Directories
@@ -25,6 +35,7 @@ localDir = "."
 data.directory = file.path(localDir, "ResponseCSVs")
 unfitted.model.directory = file.path(localDir, "UnfittedModels")
 fitted.model.directory = file.path(localDir, "FittedModels")
+outputs.directory = file.path(localDir, "Outputs/Panels")
 ```
 
 ### 4) Import models
@@ -66,7 +77,7 @@ Lifted this code straight from some of Joels old work so shout out to him. Altho
 Works automatically at present.
 
 ```{r}
-# Extract estimate Note: only needs to be run once ----
+#Extract estimate Note: only needs to be run once ----
 filename = "Outputs/Panels/parameter_estimates.pdf"
 
 nm = length(models)
@@ -195,5 +206,2392 @@ dev.off()
 
 
 
+
+```
+
+### 6) Make prettier plots
+
+Those plots work....but they're a bit messy. Let's make some nicer ones. Shout out to Joel Williams for the skeletons of these codes below. 
+
+### 6A) Fish Presence Absence
+
+Tjur's R2 and variance partitioning.
+
+```{r}
+modelnames %>% print() #Print model names so we know which one we're grabbing
+
+focalModel = models[[2]]
+
+#Grab Variance Partitioning csv and pivot to a format we like
+vp = read.csv(file.path(outputs.directory,
+                        "parameter_estimates_VP_fish_presence_absence_model_chains_4_samples_250_thin_10.csv"),
+              stringsAsFactors = TRUE)
+
+long = vp %>% 
+  pivot_longer(cols = 2:ncol(vp),
+               names_to = "species",
+               values_to = "vp") %>%
+  mutate(species = str_replace(species, fixed("."), " ") %>% capitalize()) 
+
+
+
+#Extract Tjurs R2 data
+Tjurs = long %>% 
+  filter(X == "TjurR2")
+
+#Grab VP data and switch to long format for plotting
+vp_long <- long %>%
+  filter(!X == "TjurR2") %>% # remove the Tjur R2 values for plot
+  droplevels() # need this to drop the level Tjur r2 from the factors
+
+rm(long) #Dont need this object anymore
+
+p1 <- ggplot(Tjurs) +
+  geom_bar(stat = "identity", aes(y = vp, x = species)) +
+  scale_x_discrete(limits=rev) +
+  coord_flip() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1.1)) +
+  ylab(expression(Tjur~R^{"2"})) +
+  xlab("") +
+  theme_classic() +
+  theme(axis.text.y = element_text(face=("italic")))
+p1
+
+p2 <- ggplot(data = vp_long) +
+  geom_bar(position="stack", stat="identity", aes(fill=X, y=vp, x=species)) +
+  scale_x_discrete(limits=rev) +
+  coord_flip() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1.1)) +
+  ylab("Proportion of variance explained") +
+  xlab("") +
+  scale_fill_manual(values = c('#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a','#CCCC00'),
+                    labels = c("Adjusted SD",
+                               "Bioregion",
+                               "BPI",
+                               "Depth",
+                               "MPA Protection",
+                               "2nd.Poly Significant Wave Height",
+                               "2nd.Poly Temperature",
+                               "Profile Curvature",
+                               "Random (Year)",
+                               "Random (Spatial)",
+                               "Year Since 2002"))+
+  theme_classic() +
+  theme(legend.title=element_blank(),
+        axis.text.y = element_text(face=("italic")))
+p2
+
+plot <- p1 + p2 + plot_annotation(tag_levels = 'A')
+ggsave(filename = "FishPATjurPV.tif",
+       path = file.path(outputs.directory, "FishPA"), 
+       plot = plot, 
+       height = 20, width = 40, units = "cm")
+
+
+
+```
+
+Beta estimate plots.
+
+```{r}
+#Calculate beta plot.
+#Extract data from model object. Grabs values then checks the sign (positive, negative), and sees if there is statistical support.
+postBeta = getPostEstimate(focalModel, parName="Beta")
+mbeta = postBeta$mean
+betaP = postBeta$support
+supportLevel = 0.95
+toPlot = sign(mbeta)
+toPlot = toPlot * ((betaP>supportLevel) + (betaP<(1-supportLevel))>0)
+betadf = matrix(toPlot, nrow=focalModel$nc, ncol=ncol(focalModel$Y)) %>% as.data.frame()
+colnames(betadf) = focalModel$spNames %>% str_replace(pattern = fixed("."), replace = " ")
+rownames(betadf) = focalModel$covNames
+
+#Take Beta matrix object and muck around with it for plotting
+betadf <- betadf %>% 
+  rownames_to_column("covNames") %>%
+  pivot_longer(-c(covNames), names_to = "species", values_to = "beta") %>%
+  mutate(beta = as.factor(beta),
+         species = str_replace(species, fixed("."), " "),
+         species = capitalize(species))
+
+
+levels(factor(betadf$covNames)) #Print levels so we can rename later
+
+betadf$covNames <- factor(betadf$covNames,
+                                 labels = c("(Intercept)",
+                                            "Adjusted SD",
+                                            "Bioregion - Southeast Shelf",
+                                            "Bioregion - Western Bass Strait",
+                                            "BPI",
+                                            "Depth",
+                                            "MPA Protection - Unprotected",
+                                            "Signif. Wave Height 1st Deg.",
+                                            "Signif. Wave Height 2nd Deg.",
+                                            "Temperature 1st Deg.",
+                                            "Temperature 2nd Deg.",
+                                            "Profile Curvature",
+                                            "Time Since 2002"))
+
+# make sure to run ALL the data prep code first as it uses the same object names for both models/figures. Need to fix!
+p3 <- ggplot(betadf, aes(covNames, species, fill= beta)) +
+  geom_tile(col = "lightgrey") +
+  scale_y_discrete(limits=rev) +
+  ylab("") +
+  xlab("") +
+  scale_fill_manual(values = c("navy","white","coral2"),
+                    name="Statistical\nsupport",
+                    labels=c("Negative response", "Not supported", "Positive response"),
+                    guide = guide_legend(reverse=TRUE)) +
+  theme_classic() +
+  theme(  axis.text.x  = element_text(angle=90, vjust=0.5, hjust = 1),
+          axis.text.y = element_text(face=("italic")))
+p3
+
+ggsave(filename = "FishPABeta.tif",
+       path = file.path(outputs.directory, "FishPA"), 
+       plot = p3, 
+       height = 25, width = 25, units = "cm")
+
+
+```
+
+Gradient Plots
+
+```{r}
+#To make these plots we have to set the non-focal variables to something. The way HMSC does this by default is a type = 2 but the docs warn that this can cause bit jumps in response when used on a continuous variable. Let's muck around with pre-defining it and see if it changes anything. At default there are big jumps in response associated with temperature changes that happened in 2018.
+
+#Anything that is categorical gets type = 1 (the value is set to be the most likely value....expected value for covariates, mode for factors) all continuous variables get type = 2 (sets the values of the non-focal variable to most likely value, given the value of focal variable, based on a linear relationship).
+#Looks pretty good
+n.focalVars = list(
+  YSince200 = list(1),
+  Bioregion = list(1),
+  adjSD = list(2),
+  bpi = list(2),
+  profc = list(2),
+  Depth = list(2),
+  SignifWaveHeightMonthlyMean = list(2),
+  TemperatureMonthlyMean = list(2),
+  MPAProtectStat = list(1)
+)
+
+#Year 
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "YSince2002")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Year") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Year", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness Year
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Year") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Year Richness.tif",
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#MPA Protection
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "MPAProtectStat")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+  
+  gradient_plot <- ggplot(dat, aes(x = MPAProtectStat, y = `50%`)) +
+    #geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_point(size = 2, col = "navyblue") +
+    geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("MPA Status") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("MPAStatus", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+}
+
+#Species richness MPA Protection
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = MPAProtectStat, y = `50%`)) +
+  geom_point(size = 2, col = "navyblue") +
+  geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+  ylim(0, max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Year") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "MPAStatus Richness.tif",
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#BioRegion
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "Bioregion")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+  
+  gradient_plot <- ggplot(dat, aes(x = Bioregion, y = `50%`)) +
+    #geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_point(size = 2, col = "navyblue") +
+    geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Bioregion") +
+    scale_x_discrete(labels = c("Bass\nStrait", "SE\nShelf", "W Bass Strait"))+
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Bioregion", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+}
+
+#Species richness MPA Protection
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = Bioregion, y = `50%`)) +
+  geom_point(size = 2, col = "navyblue") +
+  geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+  ylim(0, max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Bioregion") +
+  scale_x_discrete(labels = c("Bass\nStrait", "SE\nShelf", "W Bass Strait"))+
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Bioregion Richness.tif",
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Temperature 
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "TemperatureMonthlyMean")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = TemperatureMonthlyMean, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Temperature") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Temp", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness Temperature
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = TemperatureMonthlyMean, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Temperature") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Temp Richness.tif",
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Depth 
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "Depth")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = Depth, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Depth") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Depth", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness Depth
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = Depth, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Depth") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Depth Richness.tif",
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Signif Wave Height
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "SignifWaveHeightMonthlyMean")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = SignifWaveHeightMonthlyMean, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Signif. Wave Height") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("SignifWaveHeight", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness signif wave height
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = SignifWaveHeightMonthlyMean, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Signif. Wave Height") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "SignifWaveHeight Richness.tif",
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Adjusted SD Terrain
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "adjSD")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = adjSD, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Adjusted SD of Terrain") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("AdjSD", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness AdjSD
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = adjSD, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+    xlab("Adjusted SD of Terrain") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "AdjSD Richness.tif",
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#BPI
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "bpi")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = bpi, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("BPI") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("BPI", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness BPI
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = bpi, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+    xlab("BPI") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "BPI Richness.tif",
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Profc
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "profc")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = profc, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Profile Curvature") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("profc", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness profc
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = profc, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Profile Curvature") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "profc Richness.tif",
+        path = file.path(outputs.directory,"FishPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+
+
+
+
+
+```
+
+### 6B) Invert Presence Absence
+
+Tjur's R2 and variance partitioning.
+
+```{r}
+modelnames %>% print() #Print model names so we know which one we're grabbing
+
+focalModel = models[[4]]
+
+#Grab Variance Partitioning csv and pivot to a format we like
+vp = read.csv(file.path(outputs.directory,
+                        "parameter_estimates_VP_invert_presence_absence_model_chains_4_samples_250_thin_10.csv"),
+              stringsAsFactors = TRUE)
+
+long = vp %>% 
+  pivot_longer(cols = 2:ncol(vp),
+               names_to = "species",
+               values_to = "vp") %>%
+  mutate(species = str_replace(species, fixed("."), " ") %>% capitalize()) 
+
+#Extract Tjurs R2 data
+Tjurs = long %>% 
+  filter(X == "TjurR2")
+
+#Grab VP data and switch to long format for plotting
+vp_long <- long %>%
+  filter(!X == "TjurR2") %>% # remove the Tjur R2 values for plot
+  droplevels() # need this to drop the level Tjur r2 from the factors
+
+rm(long) #Dont need this object anymore
+
+p1 <- ggplot(Tjurs) +
+  geom_bar(stat = "identity", aes(y = vp, x = species)) +
+  scale_x_discrete(limits=rev) +
+  coord_flip() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1.1)) +
+  ylab(expression(Tjur~R^{"2"})) +
+  xlab("") +
+  theme_classic() +
+  theme(axis.text.y = element_text(face=("italic")))
+p1
+
+p2 <- ggplot(data = vp_long) +
+  geom_bar(position="stack", stat="identity", aes(fill=X, y=vp, x=species)) +
+  scale_x_discrete(limits=rev) +
+  coord_flip() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1.1)) +
+  ylab("Proportion of variance explained") +
+  xlab("") +
+  scale_fill_manual(values = c('#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a','#CCCC00'),
+                    labels = c("Adjusted SD",
+                               "Bioregion",
+                               "BPI",
+                               "Depth",
+                               "MPA Protection",
+                               "2nd.Poly Significant Wave Height",
+                               "2nd.Poly Temperature",
+                               "Profile Curvature",
+                               "Random (Year)",
+                               "Random (Spatial)",
+                               "Year Since 2002"))+
+  theme_classic() +
+  theme(legend.title=element_blank(),
+        axis.text.y = element_text(face=("italic")))
+p2
+
+plot <- p1 + p2 + plot_annotation(tag_levels = 'A')
+ggsave(filename = "InvertPATjurPV.tif",
+       path = file.path(outputs.directory, "InvertPA"), 
+       plot = plot, 
+       height = 20, width = 40, units = "cm")
+
+
+
+```
+
+Beta estimate plots.
+
+```{r}
+#Calculate beta plot.
+#Extract data from model object. Grabs values then checks the sign (positive, negative), and sees if there is statistical support.
+postBeta = getPostEstimate(focalModel, parName="Beta")
+mbeta = postBeta$mean
+betaP = postBeta$support
+supportLevel = 0.95
+toPlot = sign(mbeta)
+toPlot = toPlot * ((betaP>supportLevel) + (betaP<(1-supportLevel))>0)
+betadf = matrix(toPlot, nrow=focalModel$nc, ncol=ncol(focalModel$Y)) %>% as.data.frame()
+colnames(betadf) = focalModel$spNames %>% str_replace(pattern = fixed("."), replace = " ")
+rownames(betadf) = focalModel$covNames
+
+#Take Beta matrix object and muck around with it for plotting
+betadf <- betadf %>% 
+  rownames_to_column("covNames") %>%
+  pivot_longer(-c(covNames), names_to = "species", values_to = "beta") %>%
+  mutate(beta = as.factor(beta),
+         species = str_replace(species, fixed("."), " "),
+         species = capitalize(species))
+
+
+levels(factor(betadf$covNames)) #Print levels so we can rename later
+
+betadf$covNames <- factor(betadf$covNames,
+                                 labels = c("(Intercept)",
+                                            "Adjusted SD",
+                                            "Bioregion - Southeast Shelf",
+                                            "Bioregion - Western Bass Strait",
+                                            "BPI",
+                                            "Depth",
+                                            "MPA Protection - Unprotected",
+                                            "Signif. Wave Height 1st Deg.",
+                                            "Signif. Wave Height 2nd Deg.",
+                                            "Temperature 1st Deg.",
+                                            "Temperature 2nd Deg.",
+                                            "Profile Curvature",
+                                            "Time Since 2002"))
+
+# make sure to run ALL the data prep code first as it uses the same object names for both models/figures. Need to fix!
+p3 <- ggplot(betadf, aes(covNames, species, fill= beta)) +
+  geom_tile(col = "lightgrey") +
+  scale_y_discrete(limits=rev) +
+  ylab("") +
+  xlab("") +
+  scale_fill_manual(values = c("navy","white","coral2"),
+                    name="Statistical\nsupport",
+                    labels=c("Negative response", "Not supported", "Positive response"),
+                    guide = guide_legend(reverse=TRUE)) +
+  theme_classic() +
+  theme(  axis.text.x  = element_text(angle=90, vjust=0.5, hjust = 1),
+          axis.text.y = element_text(face=("italic")))
+p3
+
+ggsave(filename = "InvertPABeta.tif",
+       path = file.path(outputs.directory, "InvertPA"), 
+       plot = p3, 
+       height = 25, width = 25, units = "cm")
+
+
+```
+
+Gradient Plots
+
+```{r}
+#Again, set up how HMSC will treat the variables when they are held at a constant value.
+n.focalVars = list(
+  YSince200 = list(1),
+  Bioregion = list(1),
+  adjSD = list(2),
+  bpi = list(2),
+  profc = list(2),
+  Depth = list(2),
+  SignifWaveHeightMonthlyMean = list(2),
+  TemperatureMonthlyMean = list(2),
+  MPAProtectStat = list(1)
+)
+
+#Year 
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "YSince2002")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 24, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Year") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Year", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness Year
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Year") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Year Richness.tif",
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#MPA Protection
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "MPAProtectStat")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 22, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+  
+  gradient_plot <- ggplot(dat, aes(x = MPAProtectStat, y = `50%`)) +
+    #geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_point(size = 2, col = "navyblue") +
+    geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("MPA Status") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("MPAStatus", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+}
+
+#Species richness MPA Protection
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = MPAProtectStat, y = `50%`)) +
+  geom_point(size = 2, col = "navyblue") +
+  geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+  ylim(0, max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Year") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "MPAStatus Richness.tif",
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#BioRegion
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "Bioregion")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 22, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+  
+  gradient_plot <- ggplot(dat, aes(x = Bioregion, y = `50%`)) +
+    #geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_point(size = 2, col = "navyblue") +
+    geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Bioregion") +
+    scale_x_discrete(labels = c("Bass\nStrait", "SE\nShelf", "W Bass Strait"))+
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Bioregion", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+}
+
+#Species richness MPA Protection
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = Bioregion, y = `50%`)) +
+  geom_point(size = 2, col = "navyblue") +
+  geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+  ylim(0, max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Bioregion") +
+  scale_x_discrete(labels = c("Bass\nStrait", "SE\nShelf", "W Bass Strait"))+
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Bioregion Richness.tif",
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Temperature 
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "TemperatureMonthlyMean")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 22, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = TemperatureMonthlyMean, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Temperature") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Temp", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness Temperature
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = TemperatureMonthlyMean, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Temperature") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Temp Richness.tif",
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Depth 
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "Depth")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 22, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = Depth, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Depth") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Depth", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness Depth
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = Depth, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Depth") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Depth Richness.tif",
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Signif Wave Height
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "SignifWaveHeightMonthlyMean")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 22, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = SignifWaveHeightMonthlyMean, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Signif. Wave Height") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("SignifWaveHeight", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness signif wave height
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = SignifWaveHeightMonthlyMean, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Signif. Wave Height") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "SignifWaveHeight Richness.tif",
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Adjusted SD Terrain
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "adjSD")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 22, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = adjSD, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Adjusted SD of Terrain") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("AdjSD", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness AdjSD
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = adjSD, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+    xlab("Adjusted SD of Terrain") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "AdjSD Richness.tif",
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#BPI
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "bpi")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 22, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = bpi, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("BPI") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("BPI", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness BPI
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = bpi, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+    xlab("BPI") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "BPI Richness.tif",
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Profc
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "profc")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 22, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = profc, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylim(0,1) +
+    ylab(paste("Prob. of ",sp_name, " occurance")) +
+    xlab("Profile Curvature") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("profc", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Species richness profc
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = profc, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylim(0,max(dat$`50%` + dat$`97.5%`) %>% plyr::round_any(10, f = ceiling)) +
+  ylab("Species Richness") +
+  xlab("Profile Curvature") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "profc Richness.tif",
+        path = file.path(outputs.directory,"InvertPA/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+
+
+
+
+
+```
+
+### 6C) Fish ACOP
+
+Tjur's R2 and variance partitioning.
+
+```{r}
+modelnames %>% print() #Print model names so we know which one we're grabbing
+
+focalModel = models[[1]]
+
+#Grab Variance Partitioning csv and pivot to a format we like
+vp = read.csv(file.path(outputs.directory,
+                        "parameter_estimates_VP_fish_abundance_COP_model_chains_4_samples_250_thin_10.csv"),
+              stringsAsFactors = TRUE)
+
+long = vp %>% 
+  pivot_longer(cols = 2:ncol(vp),
+               names_to = "species",
+               values_to = "vp") %>%
+  mutate(species = str_replace(species, fixed("."), " ") %>% capitalize()) 
+
+#Extract R2 data
+Tjurs = long %>% 
+  filter(X == "R2")
+
+#Grab VP data and switch to long format for plotting
+vp_long <- long %>%
+  filter(!X == "R2") %>% # remove the Tjur R2 values for plot
+  droplevels() # need this to drop the level Tjur r2 from the factors
+
+rm(long) #Dont need this object anymore
+
+p1 <- ggplot(Tjurs) +
+  geom_bar(stat = "identity", aes(y = vp, x = species)) +
+  scale_x_discrete(limits=rev) +
+  coord_flip() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1.1)) +
+  ylab(expression(R^{"2"})) +
+  xlab("") +
+  theme_classic() +
+  theme(axis.text.y = element_text(face=("italic")))
+p1
+
+p2 <- ggplot(data = vp_long) +
+  geom_bar(position="stack", stat="identity", aes(fill=X, y=vp, x=species)) +
+  scale_x_discrete(limits=rev) +
+  coord_flip() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1.1)) +
+  ylab("Proportion of variance explained") +
+  xlab("") +
+  scale_fill_manual(values = c('#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a','#CCCC00'),
+                    labels = c("Adjusted SD",
+                               "Bioregion",
+                               "BPI",
+                               "Depth",
+                               "MPA Protection",
+                               "2nd.Poly Significant Wave Height",
+                               "2nd.Poly Temperature",
+                               "Profile Curvature",
+                               "Random (Year)",
+                               "Random (Spatial)",
+                               "Year Since 2002"))+
+  theme_classic() +
+  theme(legend.title=element_blank(),
+        axis.text.y = element_text(face=("italic")))
+p2
+
+plot <- p1 + p2 + plot_annotation(tag_levels = 'A')
+ggsave(filename = "FishACOPR2PV.tif",
+       path = file.path(outputs.directory, "FishACOP"), 
+       plot = plot, 
+       height = 20, width = 40, units = "cm")
+
+
+
+```
+
+Beta estimate plots.
+
+```{r}
+#Calculate beta plot.
+#Extract data from model object. Grabs values then checks the sign (positive, negative), and sees if there is statistical support.
+postBeta = getPostEstimate(focalModel, parName="Beta")
+mbeta = postBeta$mean
+betaP = postBeta$support
+supportLevel = 0.95
+toPlot = sign(mbeta)
+toPlot = toPlot * ((betaP>supportLevel) + (betaP<(1-supportLevel))>0)
+betadf = matrix(toPlot, nrow=focalModel$nc, ncol=ncol(focalModel$Y)) %>% as.data.frame()
+colnames(betadf) = focalModel$spNames %>% str_replace(pattern = fixed("."), replace = " ")
+rownames(betadf) = focalModel$covNames
+
+#Take Beta matrix object and muck around with it for plotting
+betadf <- betadf %>% 
+  rownames_to_column("covNames") %>%
+  pivot_longer(-c(covNames), names_to = "species", values_to = "beta") %>%
+  mutate(beta = as.factor(beta),
+         species = str_replace(species, fixed("."), " "),
+         species = capitalize(species))
+
+
+levels(factor(betadf$covNames)) #Print levels so we can rename later
+
+betadf$covNames <- factor(betadf$covNames,
+                                 labels = c("(Intercept)",
+                                            "Adjusted SD",
+                                            "Bioregion - Southeast Shelf",
+                                            "Bioregion - Western Bass Strait",
+                                            "BPI",
+                                            "Depth",
+                                            "MPA Protection - Unprotected",
+                                            "Signif. Wave Height 1st Deg.",
+                                            "Signif. Wave Height 2nd Deg.",
+                                            "Temperature 1st Deg.",
+                                            "Temperature 2nd Deg.",
+                                            "Profile Curvature",
+                                            "Time Since 2002"))
+
+# make sure to run ALL the data prep code first as it uses the same object names for both models/figures. Need to fix!
+p3 <- ggplot(betadf, aes(covNames, species, fill= beta)) +
+  geom_tile(col = "lightgrey") +
+  scale_y_discrete(limits=rev) +
+  ylab("") +
+  xlab("") +
+  scale_fill_manual(values = c("navy","white","coral2"),
+                    name="Statistical\nsupport",
+                    labels=c("Negative response", "Not supported", "Positive response"),
+                    guide = guide_legend(reverse=TRUE)) +
+  theme_classic() +
+  theme(  axis.text.x  = element_text(angle=90, vjust=0.5, hjust = 1),
+          axis.text.y = element_text(face=("italic")))
+p3
+
+ggsave(filename = "FishACOPBeta.tif",
+       path = file.path(outputs.directory, "FishACOP"), 
+       plot = p3, 
+       height = 25, width = 25, units = "cm")
+
+
+```
+
+Gradient Plots - DOES NOT CURRENTLY WORK 25.6.2024
+
+```{r}
+#Define how hmsc deals with the variables in the construct gradient function
+n.focalVars = list(
+  YSince200 = list(1),
+  Bioregion = list(1),
+  adjSD = list(2),
+  bpi = list(2),
+  profc = list(2),
+  Depth = list(2),
+  SignifWaveHeightMonthlyMean = list(2),
+  TemperatureMonthlyMean = list(2),
+  MPAProtectStat = list(1)
+)
+
+#Year 
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "YSince2002")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 7, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    #ylim(0,1) +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Year") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Year", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance Year
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  #ylim(0,20) +
+  ylab("Total Abundance") +
+  xlab("Year") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Year TotalAbun.tif",
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#MPA Protection
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "MPAProtectStat")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 7, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+  
+  gradient_plot <- ggplot(dat, aes(x = MPAProtectStat, y = `50%`)) +
+    #geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_point(size = 2, col = "navyblue") +
+    geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+    #ylim(0,NA) +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("MPA Status") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("MPAStatus", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+}
+
+#Total Abundance MPA Protection
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = MPAProtectStat, y = `50%`)) +
+  geom_point(size = 2, col = "navyblue") +
+  geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+  #ylim(0,35) +
+  ylab("Total Abundance") +
+  xlab("Year") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "MPAStatus TotalAbun.tif",
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+```
+
+### 6D) Invert ACOP
+
+Tjur's R2 and variance partitioning.
+
+```{r}
+modelnames %>% print() #Print model names so we know which one we're grabbing
+
+focalModel = models[[3]]
+
+#Grab Variance Partitioning csv and pivot to a format we like
+vp = read.csv(file.path(outputs.directory,
+                        "parameter_estimates_VP_invert_abundance_COP_model_chains_4_samples_250_thin_10.csv"),
+              stringsAsFactors = TRUE)
+
+long = vp %>% 
+  pivot_longer(cols = 2:ncol(vp),
+               names_to = "species",
+               values_to = "vp") %>%
+  mutate(species = str_replace(species, fixed("."), " ") %>% capitalize()) 
+
+
+
+#Extract R2 data
+Tjurs = long %>% 
+  filter(X == "R2")
+
+#Grab VP data and switch to long format for plotting
+vp_long <- long %>%
+  filter(!X == "R2") %>% # remove the Tjur R2 values for plot
+  droplevels() # need this to drop the level Tjur r2 from the factors
+
+rm(long) #Dont need this object anymore
+
+p1 <- ggplot(Tjurs) +
+  geom_bar(stat = "identity", aes(y = vp, x = species)) +
+  scale_x_discrete(limits=rev) +
+  coord_flip() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1.1)) +
+  ylab(expression(R^{"2"})) +
+  xlab("") +
+  theme_classic() +
+  theme(axis.text.y = element_text(face=("italic")))
+p1
+
+p2 <- ggplot(data = vp_long) +
+  geom_bar(position="stack", stat="identity", aes(fill=X, y=vp, x=species)) +
+  scale_x_discrete(limits=rev) +
+  coord_flip() +
+  scale_y_continuous(expand = c(0, 0), limits = c(0, 1.1)) +
+  ylab("Proportion of variance explained") +
+  xlab("") +
+  scale_fill_manual(values = c('#a6cee3','#1f78b4','#b2df8a','#33a02c','#fb9a99','#e31a1c','#fdbf6f','#ff7f00','#cab2d6','#6a3d9a','#CCCC00'),
+                    labels = c("Adjusted SD",
+                               "Bioregion",
+                               "BPI",
+                               "Depth",
+                               "MPA Protection",
+                               "2nd.Poly Significant Wave Height",
+                               "2nd.Poly Temperature",
+                               "Profile Curvature",
+                               "Random (Year)",
+                               "Random (Spatial)",
+                               "Year Since 2002"))+
+  theme_classic() +
+  theme(legend.title=element_blank(),
+        axis.text.y = element_text(face=("italic")))
+p2
+
+plot <- p1 + p2 + plot_annotation(tag_levels = 'A')
+ggsave(filename = "InvertACOPR2PV.tif",
+       path = file.path(outputs.directory, "InvertACOP"), 
+       plot = plot, 
+       height = 20, width = 40, units = "cm")
+
+
+
+```
+
+Beta estimate plots.
+
+```{r}
+#Calculate beta plot.
+#Extract data from model object. Grabs values then checks the sign (positive, negative), and sees if there is statistical support.
+postBeta = getPostEstimate(focalModel, parName="Beta")
+mbeta = postBeta$mean
+betaP = postBeta$support
+supportLevel = 0.95
+toPlot = sign(mbeta)
+toPlot = toPlot * ((betaP>supportLevel) + (betaP<(1-supportLevel))>0)
+betadf = matrix(toPlot, nrow=focalModel$nc, ncol=ncol(focalModel$Y)) %>% as.data.frame()
+colnames(betadf) = focalModel$spNames %>% str_replace(pattern = fixed("."), replace = " ")
+rownames(betadf) = focalModel$covNames
+
+#Take Beta matrix object and muck around with it for plotting
+betadf <- betadf %>% 
+  rownames_to_column("covNames") %>%
+  pivot_longer(-c(covNames), names_to = "species", values_to = "beta") %>%
+  mutate(beta = as.factor(beta),
+         species = str_replace(species, fixed("."), " "),
+         species = capitalize(species))
+
+
+levels(factor(betadf$covNames)) #Print levels so we can rename later
+
+betadf$covNames <- factor(betadf$covNames,
+                                 labels = c("(Intercept)",
+                                            "Adjusted SD",
+                                            "Bioregion - Southeast Shelf",
+                                            "Bioregion - Western Bass Strait",
+                                            "BPI",
+                                            "Depth",
+                                            "MPA Protection - Unprotected",
+                                            "Signif. Wave Height 1st Deg.",
+                                            "Signif. Wave Height 2nd Deg.",
+                                            "Temperature 1st Deg.",
+                                            "Temperature 2nd Deg.",
+                                            "Profile Curvature",
+                                            "Time Since 2002"))
+
+# make sure to run ALL the data prep code first as it uses the same object names for both models/figures. Need to fix!
+p3 <- ggplot(betadf, aes(covNames, species, fill= beta)) +
+  geom_tile(col = "lightgrey") +
+  scale_y_discrete(limits=rev) +
+  ylab("") +
+  xlab("") +
+  scale_fill_manual(values = c("navy","white","coral2"),
+                    name="Statistical\nsupport",
+                    labels=c("Negative response", "Not supported", "Positive response"),
+                    guide = guide_legend(reverse=TRUE)) +
+  theme_classic() +
+  theme(  axis.text.x  = element_text(angle=90, vjust=0.5, hjust = 1),
+          axis.text.y = element_text(face=("italic")))
+p3
+
+ggsave(filename = "InvertACOPBeta.tif",
+       path = file.path(outputs.directory, "InvertACOP"), 
+       plot = p3, 
+       height = 25, width = 25, units = "cm")
+
+
+```
+
+Gradient Plots - DOES NOT CURRENTLY WORK 25.6.2024
+
+```{r}
+#Define how hmsc deals with the variables in the construct gradient function
+n.focalVars = list(
+  YSince200 = list(1),
+  Bioregion = list(1),
+  adjSD = list(2),
+  bpi = list(2),
+  profc = list(2),
+  Depth = list(2),
+  SignifWaveHeightMonthlyMean = list(2),
+  TemperatureMonthlyMean = list(2),
+  MPAProtectStat = list(1)
+)
+
+#Year 
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "YSince2002")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 7, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    #ylim(0,1) +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Year") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Year", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance Year
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  #ylim(0,20) +
+  ylab("Total Abundance") +
+  xlab("Year") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Year TotalAbun.tif",
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#MPA Protection
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "MPAProtectStat")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 7, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+  
+  gradient_plot <- ggplot(dat, aes(x = MPAProtectStat, y = `50%`)) +
+    #geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_point(size = 2, col = "navyblue") +
+    geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+    #ylim(0,NA) +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("MPA Status") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("MPAStatus", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+}
+
+#Total Abundance MPA Protection
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+
+gradient_plot <- ggplot(dat, aes(x = MPAProtectStat, y = `50%`)) +
+  geom_point(size = 2, col = "navyblue") +
+  geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+  #ylim(0,35) +
+  ylab("Total Abundance") +
+  xlab("Year") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "MPAStatus TotalAbundance.tif",
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
 
 ```
