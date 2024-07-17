@@ -31,7 +31,7 @@ library(abind)
 ### 3) Directories
 
 ```{r}
-localDir = "."
+localDir = "Z:/GIS-Res/Projects/ParksVic_Hmsc/Modelling/"
 data.directory = file.path(localDir, "ResponseCSVs")
 unfitted.model.directory = file.path(localDir, "UnfittedModels")
 fitted.model.directory = file.path(localDir, "FittedModels")
@@ -74,9 +74,9 @@ for (i in 1:length(fittedModels)){
 
 Lifted this code straight from some of Joels old work so shout out to him. Although, I think this code originated as part of Otso's HMSC course so also props to the team at HMSC too!
 
-Works automatically at present.
+Works automatically at present. Throws a load of warning so we turn them off :)
 
-```{r}
+```{r, warning=FALSE}
 #Extract estimate Note: only needs to be run once ----
 filename = "Outputs/Panels/parameter_estimates.pdf"
 
@@ -379,7 +379,7 @@ focalModel$covNames #Print variable names
 Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "YSince2002")
 predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
 focalModel$spNames #Print species names
-plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
 plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
 
 sp_interest = c(1:length(focalModel$spNames)) # all species
@@ -408,6 +408,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -437,6 +439,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -457,7 +461,7 @@ ggsave(filename = "Year Richness.tif",
 focalModel$covNames #Print variable names
 Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "MPAProtectStat")
 predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
-plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
 plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
 
 sp_interest = c(1:length(focalModel$spNames)) # all species
@@ -486,6 +490,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -515,6 +521,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = MPAProtectStat, y = `50%`)) +
   geom_point(size = 2, col = "navyblue") +
@@ -535,7 +543,7 @@ ggsave(filename = "MPAStatus Richness.tif",
 focalModel$covNames #Print variable names
 Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "Bioregion")
 predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
-plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
 plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
 
 sp_interest = c(1:length(focalModel$spNames)) # all species
@@ -564,6 +572,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -594,6 +604,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = Bioregion, y = `50%`)) +
   geom_point(size = 2, col = "navyblue") +
@@ -616,7 +628,7 @@ focalModel$covNames #Print variable names
 Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "TemperatureMonthlyMean")
 predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
 focalModel$spNames #Print species names
-plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
 plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
 
 sp_interest = c(1:length(focalModel$spNames)) # all species
@@ -645,6 +657,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -674,6 +688,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = TemperatureMonthlyMean, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -695,7 +711,7 @@ focalModel$covNames #Print variable names
 Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "Depth")
 predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
 focalModel$spNames #Print species names
-plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
 plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
 
 sp_interest = c(1:length(focalModel$spNames)) # all species
@@ -724,6 +740,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -753,6 +771,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = Depth, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -774,7 +794,7 @@ focalModel$covNames #Print variable names
 Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "SignifWaveHeightMonthlyMean")
 predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
 focalModel$spNames #Print species names
-plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
 plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
 
 sp_interest = c(1:length(focalModel$spNames)) # all species
@@ -803,6 +823,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -832,6 +854,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = SignifWaveHeightMonthlyMean, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -853,7 +877,7 @@ focalModel$covNames #Print variable names
 Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "adjSD")
 predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
 focalModel$spNames #Print species names
-plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
 plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
 
 sp_interest = c(1:length(focalModel$spNames)) # all species
@@ -882,6 +906,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -911,6 +937,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = adjSD, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -932,7 +960,7 @@ focalModel$covNames #Print variable names
 Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "bpi")
 predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
 focalModel$spNames #Print species names
-plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
 plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
 
 sp_interest = c(1:length(focalModel$spNames)) # all species
@@ -961,6 +989,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -990,6 +1020,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = bpi, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -1011,7 +1043,7 @@ focalModel$covNames #Print variable names
 Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "profc")
 predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
 focalModel$spNames #Print species names
-plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 57, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
 plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
 
 sp_interest = c(1:length(focalModel$spNames)) # all species
@@ -1040,6 +1072,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -1069,6 +1103,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = profc, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -1282,6 +1318,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -1311,6 +1349,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -1360,6 +1400,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -1389,6 +1431,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = MPAProtectStat, y = `50%`)) +
   geom_point(size = 2, col = "navyblue") +
@@ -1438,6 +1482,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -1468,6 +1514,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = Bioregion, y = `50%`)) +
   geom_point(size = 2, col = "navyblue") +
@@ -1519,6 +1567,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -1548,6 +1598,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = TemperatureMonthlyMean, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -1598,6 +1650,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -1627,6 +1681,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = Depth, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -1677,6 +1733,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -1706,6 +1764,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = SignifWaveHeightMonthlyMean, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -1756,6 +1816,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -1785,6 +1847,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = adjSD, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -1835,6 +1899,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -1864,6 +1930,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = bpi, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -1914,6 +1982,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -1943,6 +2013,8 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = profc, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
@@ -2127,7 +2199,7 @@ focalModel$covNames #Print variable names
 Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "YSince2002")
 predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
 focalModel$spNames #Print species names
-plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 7, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
 plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
 
 sp_interest = c(1:length(focalModel$spNames)) # all species
@@ -2156,6 +2228,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -2164,7 +2238,6 @@ for (i in seq_along(sp_interest)) {
   gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
     geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
     geom_line(linewidth = 2, col = "navyblue") +
-    #ylim(0,1) +
     ylab(paste(sp_name, "Abundance COP")) +
     xlab("Year") +
     theme_classic() +
@@ -2185,11 +2258,12 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
   geom_line(linewidth = 2, col = "navyblue") +
-  #ylim(0,20) +
   ylab("Total Abundance") +
   xlab("Year") +
   theme_classic() +
@@ -2205,7 +2279,7 @@ ggsave(filename = "Year TotalAbun.tif",
 focalModel$covNames #Print variable names
 Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "MPAProtectStat")
 predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
-plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 7, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
 plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
 
 sp_interest = c(1:length(focalModel$spNames)) # all species
@@ -2234,6 +2308,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -2243,7 +2319,6 @@ for (i in seq_along(sp_interest)) {
     #geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
     geom_point(size = 2, col = "navyblue") +
     geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
-    #ylim(0,NA) +
     ylab(paste(sp_name, "Abundance COP")) +
     xlab("MPA Status") +
     theme_classic() +
@@ -2263,11 +2338,12 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = MPAProtectStat, y = `50%`)) +
   geom_point(size = 2, col = "navyblue") +
   geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
-  #ylim(0,35) +
   ylab("Total Abundance") +
   xlab("Year") +
   theme_classic() +
@@ -2277,6 +2353,575 @@ gradient_plot
 ggsave(filename = "MPAStatus TotalAbun.tif",
         path = file.path(outputs.directory,"FishACOP/Gradients"),
         gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#BioRegion
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "Bioregion")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+  
+  gradient_plot <- ggplot(dat, aes(x = Bioregion, y = `50%`)) +
+    #geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_point(size = 2, col = "navyblue") +
+    geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Bioregion") +
+    scale_x_discrete(labels = c("Bass\nStrait", "SE\nShelf", "W Bass Strait"))+
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Bioregion", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+}
+
+#Total Abundance MPA Protection
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = Bioregion, y = `50%`)) +
+  geom_point(size = 2, col = "navyblue") +
+  geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+  ylab("Total Abundance") +
+  xlab("Bioregion") +
+  scale_x_discrete(labels = c("Bass\nStrait", "SE\nShelf", "W Bass Strait"))+
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Bioregion TotalAbun.tif",
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Temperature 
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "TemperatureMonthlyMean")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = TemperatureMonthlyMean, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Temperature") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Temp", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance Temperature
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = TemperatureMonthlyMean, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylab("Total Abundance") +
+  xlab("Temperature") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Temp TotalAbun.tif",
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Depth 
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "Depth")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = Depth, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Depth") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Depth", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance Depth
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = Depth, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylab("Total Abundance") +
+  xlab("Depth") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Depth TotalAbun.tif",
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Signif Wave Height
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "SignifWaveHeightMonthlyMean")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = SignifWaveHeightMonthlyMean, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Signif. Wave Height") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("SignifWaveHeight", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance signif wave height
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = SignifWaveHeightMonthlyMean, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylab("Total Abundance") +
+  xlab("Signif. Wave Height") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "SignifWaveHeight TotalAbun.tif",
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Adjusted SD Terrain
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "adjSD")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = adjSD, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Adjusted SD of Terrain") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("AdjSD", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance AdjSD
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = adjSD, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylab("Total Abundance") +
+    xlab("Adjusted SD of Terrain") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "AdjSD TotalAbun.tif",
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#BPI
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "bpi")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = bpi, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("BPI") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("BPI", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance BPI
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = bpi, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylab("Total Abundance") +
+    xlab("BPI") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "BPI TotalAbun.tif",
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Profc
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "profc")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = profc, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Profile Curvature") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("profc", sp_name, ".tif"),
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance profc
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = profc, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylab("Total Abundance") +
+  xlab("Profile Curvature") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "profc TotalAbun.tif",
+        path = file.path(outputs.directory,"FishACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
 
 ```
 
@@ -2422,7 +3067,7 @@ ggsave(filename = "InvertACOPBeta.tif",
 
 ```
 
-Gradient Plots - DOES NOT CURRENTLY WORK 25.6.2024
+Gradient Plots
 
 ```{r}
 #Define how hmsc deals with the variables in the construct gradient function
@@ -2443,7 +3088,7 @@ focalModel$covNames #Print variable names
 Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "YSince2002")
 predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
 focalModel$spNames #Print species names
-plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 7, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
 plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
 
 sp_interest = c(1:length(focalModel$spNames)) # all species
@@ -2472,6 +3117,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -2480,7 +3127,6 @@ for (i in seq_along(sp_interest)) {
   gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
     geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
     geom_line(linewidth = 2, col = "navyblue") +
-    #ylim(0,1) +
     ylab(paste(sp_name, "Abundance COP")) +
     xlab("Year") +
     theme_classic() +
@@ -2501,11 +3147,12 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = YSince2002, y = `50%`)) +
   geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
   geom_line(linewidth = 2, col = "navyblue") +
-  #ylim(0,20) +
   ylab("Total Abundance") +
   xlab("Year") +
   theme_classic() +
@@ -2521,7 +3168,7 @@ ggsave(filename = "Year TotalAbun.tif",
 focalModel$covNames #Print variable names
 Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "MPAProtectStat")
 predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
-plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 7, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
 plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
 
 sp_interest = c(1:length(focalModel$spNames)) # all species
@@ -2550,6 +3197,8 @@ for (i in seq_along(sp_interest)) {
   qpred = qpred[, , index]
   qpred_long <- t(qpred)
   dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
   sp_name <- focalModel$spNames[[index]]
   sp_name <- str_replace(sp_name, fixed("."), " ")
@@ -2559,7 +3208,6 @@ for (i in seq_along(sp_interest)) {
     #geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
     geom_point(size = 2, col = "navyblue") +
     geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
-    #ylim(0,NA) +
     ylab(paste(sp_name, "Abundance COP")) +
     xlab("MPA Status") +
     theme_classic() +
@@ -2579,19 +3227,589 @@ qpred = apply(predS, c(1), quantile,
               probs = q, na.rm=TRUE)
 qpred_long <- t(qpred)
 dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
 
 gradient_plot <- ggplot(dat, aes(x = MPAProtectStat, y = `50%`)) +
   geom_point(size = 2, col = "navyblue") +
   geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
-  #ylim(0,35) +
   ylab("Total Abundance") +
   xlab("Year") +
   theme_classic() +
   theme(text = element_text(size = 6))
 gradient_plot
 
-ggsave(filename = "MPAStatus TotalAbundance.tif",
+ggsave(filename = "MPAStatus TotalAbun.tif",
         path = file.path(outputs.directory,"InvertACOP/Gradients"),
         gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#BioRegion
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "Bioregion")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+  
+  gradient_plot <- ggplot(dat, aes(x = Bioregion, y = `50%`)) +
+    #geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_point(size = 2, col = "navyblue") +
+    geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Bioregion") +
+    scale_x_discrete(labels = c("Bass\nStrait", "SE\nShelf", "W Bass Strait"))+
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Bioregion", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+}
+
+#Total Abundance MPA Protection
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = Bioregion, y = `50%`)) +
+  geom_point(size = 2, col = "navyblue") +
+  geom_errorbar(aes(ymin=`50%`-`2.5%`, ymax=`50%`+`97.5%`), width=.1, col = "navyblue") +
+  xlab("Bioregion") +
+  scale_x_discrete(labels = c("Bass\nStrait", "SE\nShelf", "W Bass Strait"))+
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Bioregion TotalAbun.tif",
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Temperature 
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "TemperatureMonthlyMean")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = TemperatureMonthlyMean, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Temperature") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Temp", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance Temperature
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = TemperatureMonthlyMean, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylab("Total Abundance") +
+  xlab("Temperature") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Temp TotalAbun.tif",
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Depth 
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "Depth")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = Depth, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Depth") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("Depth", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance Depth
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = Depth, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylab("Total Abundance") +
+  xlab("Depth") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "Depth TotalAbun.tif",
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Signif Wave Height
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "SignifWaveHeightMonthlyMean")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = SignifWaveHeightMonthlyMean, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Signif. Wave Height") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("SignifWaveHeight", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance signif wave height
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = SignifWaveHeightMonthlyMean, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylab("Total Abundance") +
+  xlab("Signif. Wave Height") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "SignifWaveHeight TotalAbun.tif",
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Adjusted SD Terrain
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "adjSD")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = adjSD, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Adjusted SD of Terrain") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("AdjSD", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance AdjSD
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = adjSD, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylab("Total Abundance") +
+    xlab("Adjusted SD of Terrain") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "AdjSD TotalAbun.tif",
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#BPI
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "bpi")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = bpi, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("BPI") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("BPI", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance BPI
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = bpi, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylab("Total Abundance") +
+    xlab("BPI") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "BPI TotalAbun.tif",
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
+#Profc
+focalModel$covNames #Print variable names
+Gradient = constructGradient(ngrid = 100, non.focalVariables = n.focalVars, focalModel, focalVariable = "profc")
+predY = predict(focalModel, Gradient=Gradient, expected = TRUE)
+focalModel$spNames #Print species names
+plotGradient(focalModel, Gradient, pred=predY, measure="Y", index = 10, showData = TRUE)
+plotGradient(focalModel, Gradient, pred=predY, measure="S", showData = TRUE)
+
+sp_interest = c(1:length(focalModel$spNames)) # all species
+
+for (i in seq_along(sp_interest)) {
+
+  index = sp_interest[[i]]
+
+  switch(class(focalModel$X)[1L],
+         matrix = {
+           xx = Gradient$XDataNew[, 1]
+         },
+         list = {
+           if (measure == "Y") {
+             xx = Gradient$XDataNew[[index]][, 1]
+           } else {
+             xx = Gradient$XDataNew[[1]][, 1]
+           }
+         }
+  )
+  ngrid = length(Gradient)
+  q = c(0.025, 0.5, 0.975)
+  tmp = abind(predY, along = 3)
+  #Pr = mean(tmp[ngrid,index,]>tmp[1,index,])
+  qpred = apply(tmp, c(1, 2), quantile, probs = q, na.rm=TRUE)
+  qpred = qpred[, , index]
+  qpred_long <- t(qpred)
+  dat <- cbind(Gradient$XDataNew, qpred_long)
+  dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+  dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+  sp_name <- focalModel$spNames[[index]]
+  sp_name <- str_replace(sp_name, fixed("."), " ")
+  sp_name <- capitalize(sp_name)
+
+  gradient_plot <- ggplot(dat, aes(x = profc, y = `50%`)) +
+    geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+    geom_line(linewidth = 2, col = "navyblue") +
+    ylab(paste(sp_name, "Abundance COP")) +
+    xlab("Profile Curvature") +
+    theme_classic() +
+    theme(text = element_text(size = 6))
+
+  ggsave(filename = paste("profc", sp_name, ".tif"),
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+}
+
+#Total Abundance profc
+ngrid = length(predY)
+predS = abind(lapply(predY, rowSums),along=2)
+#Pr = mean(predS[ngrid,]>predS[1,])
+q = c(0.025, 0.5, 0.975)
+qpred = apply(predS, c(1), quantile,
+              probs = q, na.rm=TRUE)
+qpred_long <- t(qpred)
+dat <- cbind(Gradient$XDataNew, qpred_long)
+dat$`2.5%`[dat$`2.5%`<0] = 0 #Some of the poorer fitting models predict negative abundance at the 2.5%CI. This is mainly where predicted abundances are tiny anyway. But, because this is not ecologicaly possible let's 0 it out. We do the same for the PA models just for the sake of cleanliness
+dat$`50%`[dat$`50%`<0] = 0 #Just incase the same can be said for the median. 
+
+gradient_plot <- ggplot(dat, aes(x = profc, y = `50%`)) +
+  geom_smooth(fill = "skyblue", aes(ymin = `2.5%`, ymax = `97.5%`), stat = "identity") +
+  geom_line(linewidth = 2, col = "navyblue") +
+  ylab("Total Abundance") +
+  xlab("Profile Curvature") +
+  theme_classic() +
+  theme(text = element_text(size = 6))
+gradient_plot
+
+ggsave(filename = "profc TotalAbun.tif",
+        path = file.path(outputs.directory,"InvertACOP/Gradients"),
+        gradient_plot, height = 5, width = 5, units = "cm")
+
+
 
 ```
