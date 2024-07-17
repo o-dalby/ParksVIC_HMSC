@@ -17,12 +17,13 @@ set.seed(1995)
 library(Hmsc)
 library(corrplot)
 library(dplyr)
+library(ape)
 ```
 
 ### 3) Directories
 
 ```{r}
-localDir = "."
+localDir = "Z:/GIS-Res/Projects/ParksVic_Hmsc/Modelling/"
 data.directory = file.path(localDir, "ResponseCSVs")
 unfitted.model.directory = file.path(localDir, "UnfittedModels")
 fitted.model.directory = file.path(localDir, "FittedModels")
@@ -239,12 +240,64 @@ invertYabu=log(invertYabu) #Calcs log transformed abundance where presence == 1
 
 ```
 
-Finally we can define our models. 
+We can also bring in a taxanomic tree for each of the fish and invert data.
+
+```{r}
+#Load in fish taxanomic data
+fishTaxa = read.csv(file.path(data.directory, "FishTaxaTable.csv"), stringsAsFactors = TRUE)
+
+#Note that this csv has all the species in it from the fish dataset. Even the odd ones where the species couldnt be ID'ed or the abundance was below our limits. Let's subset to only include rows where the species is in the fishY dataset.
+fishTaxa = fishTaxa[str_c(fishTaxa$genus, fishTaxa$species, sep = ".") %in% names(fishY),]
+
+str_c(fishTaxa$genus, fishTaxa$species, sep = ".") %>% table() #Check that we have only one entry per species. Got two for Pseudognoiistius nigripes.
+fishTaxa[str_c(fishTaxa$genus, fishTaxa$species, sep = ".") == "Pseudogoniistius.nigripes",] #Shows we have two entries One with erroneous Family
+fishTaxa = fishTaxa[!(str_c(fishTaxa$genus, fishTaxa$species, sep = ".") == "Pseudogoniistius.nigripes" & fishTaxa$family == "Cheilodactylidae"),]
+
+str_c(fishTaxa$genus, fishTaxa$species, sep = ".") %in% names(fishY) %>% table() #Final check that all species names in tree match fishY. 58 TRUEs
+
+fishTree = as.phylo(~family/genus/species,
+                    data = fishTaxa,
+                    collapse = FALSE) 
+
+fishTree$edge.length = rep(1, length(fishTree$edge)) #Assume all branch lengths are equal at a value of 1
+
+plot(fishTree, show.tip.label = FALSE,
+     no.margin = TRUE)
+
+#Repeat for inverts
+invertTaxa = read.csv(file.path(data.directory, "InvertTaxaTable.csv"), stringsAsFactors = TRUE)
+
+#Note that this csv has all the species in it from the invert dataset. Even the odd ones where the species couldnt be ID'ed or the abundance was below our limits. Let's subset to only include rows where the species is in the invertY dataset.
+invertTaxa = invertTaxa[str_c(invertTaxa$genus, invertTaxa$species, sep = ".") %in% names(invertY),]
+
+str_c(invertTaxa$genus, invertTaxa$species, sep = ".") %>% table() #Check that we have only one entry per species. Got two for Cenolia.trichoptera and two Paguroidea spp.
+invertTaxa[str_c(invertTaxa$genus, invertTaxa$species, sep = ".") == "Cenolia.trichoptera",] #Shows we have two entries one with erroneous order
+invertTaxa = invertTaxa[!(str_c(invertTaxa$genus, invertTaxa$species, sep = ".") == "Cenolia.trichoptera" & invertTaxa$order == "Articulata"),]
+invertTaxa[str_c(invertTaxa$genus, invertTaxa$species, sep = ".") == "Paguroidea.spp.",] #Shows we have two entries one with no family data
+invertTaxa = invertTaxa[!(str_c(invertTaxa$genus, invertTaxa$species, sep = ".") == "Paguroidea.spp." & is.na(invertTaxa$family) == TRUE),]
+
+str_c(invertTaxa$genus, invertTaxa$species, sep = ".") %in% names(invertY) %>% table() #Final check that all species names in tree match invertY. 46 TRUEs
+
+invertTree = as.phylo(~family/genus/species,
+                    data = invertTaxa,
+                    collapse = FALSE) 
+
+invertTree$edge.length = rep(1, length(invertTree$edge)) #Assume all branch lengths are equal at a value of 1
+
+plot(invertTree, show.tip.label = FALSE,
+     no.margin = TRUE)
+
+
+
+```
+
+Finally we can define our models. CURRENTLY DOES NOT WANT TO READ SPECIES NAMES FOR PHYLO TREE
 
 ```{r}
 mF1 <- Hmsc(Y= fishYpa,
             XData = fishX, XFormula = XFormula,
             #TrData = TrData, TrFormula = TrFormula,
+            phyloTree = fishTree,
             distr = "probit",
             studyDesign = fishStudyDesign,
             ranLevels = list("Fyear" = rL.fishYear, #Names of random variables defined here must match cols in studydesign matrix
@@ -255,6 +308,7 @@ mF1 <- Hmsc(Y= fishYpa,
 mF2 <- Hmsc(Y= fishYabu, YScale = TRUE,
             XData = fishX, XFormula = XFormula,
             #TrData = TrData, TrFormula = TrFormula,
+            phyloTree = fishTree,
             distr = "normal",
             studyDesign = fishStudyDesign,
             ranLevels = list("Fyear" = rL.fishYear,
@@ -265,6 +319,7 @@ mF2 <- Hmsc(Y= fishYabu, YScale = TRUE,
 mI1 <- Hmsc(Y= invertYpa,
             XData = invertX, XFormula = XFormula,
             #TrData = TrData, TrFormula = TrFormula,
+            phyloTree = invertTree,
             distr = "probit",
             studyDesign = invertStudyDesign,
             ranLevels = list("Fyear" = rL.invertYear,
@@ -275,6 +330,7 @@ mI1 <- Hmsc(Y= invertYpa,
 mI2 <- Hmsc(Y= invertYabu, YScale = TRUE,
             XData = invertX, XFormula = XFormula,
             #TrData = TrData, TrFormula = TrFormula,
+            phyloTree = invertTree,
             distr = "normal",
             studyDesign = invertStudyDesign,
             ranLevels = list("Fyear" = rL.invertYear,
