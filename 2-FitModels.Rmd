@@ -348,7 +348,7 @@ mI2 <- Hmsc(Y= invertYabu, YScale = TRUE,
 models <- list(mF1, mF2, mI1, mI2)
 modelnames <- c("fish_presence_absence", "fish_abundance_COP", "invert_presence_absence", "invert_abundance_COP")
 names(models) = modelnames
-saveRDS(models, file = file.path(unfitted.model.directory, "PostMeetingModelsJune24"))
+saveRDS(models, file = file.path(unfitted.model.directory, "OD_EndOfContributionModelsJuly24"))
 
 
 
