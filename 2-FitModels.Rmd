@@ -18,6 +18,7 @@ library(Hmsc)
 library(corrplot)
 library(dplyr)
 library(ape)
+library(stringr)
 ```
 
 ### 3) Directories
@@ -247,13 +248,16 @@ We can also bring in a taxanomic tree for each of the fish and invert data.
 fishTaxa = read.csv(file.path(data.directory, "FishTaxaTable.csv"), stringsAsFactors = TRUE)
 
 #Note that this csv has all the species in it from the fish dataset. Even the odd ones where the species couldnt be ID'ed or the abundance was below our limits. Let's subset to only include rows where the species is in the fishY dataset.
-fishTaxa = fishTaxa[str_c(fishTaxa$genus, fishTaxa$species, sep = ".") %in% names(fishY),]
+fishTaxa = fishTaxa[str_c(fishTaxa$genus, fishTaxa$epithet, sep = ".") %in% names(fishY),]
 
-str_c(fishTaxa$genus, fishTaxa$species, sep = ".") %>% table() #Check that we have only one entry per species. Got two for Pseudognoiistius nigripes.
-fishTaxa[str_c(fishTaxa$genus, fishTaxa$species, sep = ".") == "Pseudogoniistius.nigripes",] #Shows we have two entries One with erroneous Family
-fishTaxa = fishTaxa[!(str_c(fishTaxa$genus, fishTaxa$species, sep = ".") == "Pseudogoniistius.nigripes" & fishTaxa$family == "Cheilodactylidae"),]
+str_c(fishTaxa$genus, fishTaxa$epithet, sep = ".") %>% table() #Check that we have only one entry per species. Got two for Pseudognoiistius nigripes.
+fishTaxa[str_c(fishTaxa$genus, fishTaxa$epithet, sep = ".") == "Pseudogoniistius.nigripes",] #Shows we have two entries One with erroneous Family
+fishTaxa = fishTaxa[!(str_c(fishTaxa$genus, fishTaxa$epithet, sep = ".") == "Pseudogoniistius.nigripes" & fishTaxa$family == "Cheilodactylidae"),]
 
-str_c(fishTaxa$genus, fishTaxa$species, sep = ".") %in% names(fishY) %>% table() #Final check that all species names in tree match fishY. 58 TRUEs
+str_c(fishTaxa$genus, fishTaxa$epithet, sep = ".") %in% names(fishY) %>% table() #Final check that all species names in tree match fishY. 58 TRUEs
+
+#Finally add a complete species name col to the dataset
+fishTaxa$species = str_c(fishTaxa$genus, fishTaxa$epithet, sep = ".") %>% as.factor()
 
 fishTree = as.phylo(~family/genus/species,
                     data = fishTaxa,
@@ -268,15 +272,18 @@ plot(fishTree, show.tip.label = FALSE,
 invertTaxa = read.csv(file.path(data.directory, "InvertTaxaTable.csv"), stringsAsFactors = TRUE)
 
 #Note that this csv has all the species in it from the invert dataset. Even the odd ones where the species couldnt be ID'ed or the abundance was below our limits. Let's subset to only include rows where the species is in the invertY dataset.
-invertTaxa = invertTaxa[str_c(invertTaxa$genus, invertTaxa$species, sep = ".") %in% names(invertY),]
+invertTaxa = invertTaxa[str_c(invertTaxa$genus, invertTaxa$epithet, sep = ".") %in% names(invertY),]
 
-str_c(invertTaxa$genus, invertTaxa$species, sep = ".") %>% table() #Check that we have only one entry per species. Got two for Cenolia.trichoptera and two Paguroidea spp.
-invertTaxa[str_c(invertTaxa$genus, invertTaxa$species, sep = ".") == "Cenolia.trichoptera",] #Shows we have two entries one with erroneous order
-invertTaxa = invertTaxa[!(str_c(invertTaxa$genus, invertTaxa$species, sep = ".") == "Cenolia.trichoptera" & invertTaxa$order == "Articulata"),]
-invertTaxa[str_c(invertTaxa$genus, invertTaxa$species, sep = ".") == "Paguroidea.spp.",] #Shows we have two entries one with no family data
-invertTaxa = invertTaxa[!(str_c(invertTaxa$genus, invertTaxa$species, sep = ".") == "Paguroidea.spp." & is.na(invertTaxa$family) == TRUE),]
+str_c(invertTaxa$genus, invertTaxa$epithet, sep = ".") %>% table() #Check that we have only one entry per species. Got two for Cenolia.trichoptera and two Paguroidea spp.
+invertTaxa[str_c(invertTaxa$genus, invertTaxa$epithet, sep = ".") == "Cenolia.trichoptera",] #Shows we have two entries one with erroneous order
+invertTaxa = invertTaxa[!(str_c(invertTaxa$genus, invertTaxa$epithet, sep = ".") == "Cenolia.trichoptera" & invertTaxa$order == "Articulata"),]
+invertTaxa[str_c(invertTaxa$genus, invertTaxa$epithet, sep = ".") == "Paguroidea.spp.",] #Shows we have two entries one with no family data
+invertTaxa = invertTaxa[!(str_c(invertTaxa$genus, invertTaxa$epithet, sep = ".") == "Paguroidea.spp." & is.na(invertTaxa$family) == TRUE),]
 
-str_c(invertTaxa$genus, invertTaxa$species, sep = ".") %in% names(invertY) %>% table() #Final check that all species names in tree match invertY. 46 TRUEs
+str_c(invertTaxa$genus, invertTaxa$epithet, sep = ".") %in% names(invertY) %>% table() #Final check that all species names in tree match invertY. 46 TRUEs
+
+#Finally add a complete species name col to the dataset
+invertTaxa$species = str_c(invertTaxa$genus, invertTaxa$epithet, sep = ".") %>% as.factor()
 
 invertTree = as.phylo(~family/genus/species,
                     data = invertTaxa,
@@ -291,7 +298,7 @@ plot(invertTree, show.tip.label = FALSE,
 
 ```
 
-Finally we can define our models. CURRENTLY DOES NOT WANT TO READ SPECIES NAMES FOR PHYLO TREE
+Finally we can define our models.
 
 ```{r}
 mF1 <- Hmsc(Y= fishYpa,
