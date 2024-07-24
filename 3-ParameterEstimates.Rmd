@@ -224,7 +224,7 @@ focalModel = models[[2]]
 
 #Grab Variance Partitioning csv and pivot to a format we like
 vp = read.csv(file.path(outputs.directory,
-                        "parameter_estimates_VP_fish_presence_absence_model_chains_4_samples_250_thin_10.csv"),
+                        "parameter_estimates_VP_fish_PA_model_chains_4_samples_250_thin_10.csv"),
               stringsAsFactors = TRUE)
 
 long = vp %>% 
@@ -1139,7 +1139,7 @@ focalModel = models[[4]]
 
 #Grab Variance Partitioning csv and pivot to a format we like
 vp = read.csv(file.path(outputs.directory,
-                        "parameter_estimates_VP_invert_presence_absence_model_chains_4_samples_250_thin_10.csv"),
+                        "parameter_estimates_VP_invert_PA_model_chains_4_samples_250_thin_10.csv"),
               stringsAsFactors = TRUE)
 
 long = vp %>% 
@@ -2049,7 +2049,7 @@ focalModel = models[[1]]
 
 #Grab Variance Partitioning csv and pivot to a format we like
 vp = read.csv(file.path(outputs.directory,
-                        "parameter_estimates_VP_fish_abundance_COP_model_chains_4_samples_250_thin_10.csv"),
+                        "parameter_estimates_VP_fish_ACOP_model_chains_4_samples_250_thin_10.csv"),
               stringsAsFactors = TRUE)
 
 long = vp %>% 
@@ -2936,7 +2936,7 @@ focalModel = models[[3]]
 
 #Grab Variance Partitioning csv and pivot to a format we like
 vp = read.csv(file.path(outputs.directory,
-                        "parameter_estimates_VP_invert_abundance_COP_model_chains_4_samples_250_thin_10.csv"),
+                        "parameter_estimates_VP_invert_ACOP_model_chains_4_samples_250_thin_10.csv"),
               stringsAsFactors = TRUE)
 
 long = vp %>% 
