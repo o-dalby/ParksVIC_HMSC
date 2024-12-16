@@ -1,0 +1,180 @@
+---
+title: "1.5 - Generating and exporting prediction grids"
+author: "Oliver Dalby"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+### Purpose
+
+Purpose of this subset of codes is to import the rasters we made during the previous codes as rasters, convert to XYZ, and supplement with any other metrics we need but are not in raster format (e.g. lat long).
+
+This work is being undertaken in collaboration with Michael Sams (Park's VIC), UTAS (Joel Williams) and Deakin Uni (Mary Young, Oli Dalby).
+
+Fish and Invert data are taken from a long term dataset from Reff Life Survey spanning ~30 years of data (1992-2023).
+
+### Package import
+
+```{r}
+library(terra)
+library(collapse)
+library(sf)
+library(MultiscaleDTM) #For terrain metrics https://doi.org/10.1111/tgis.13067
+library(parallel)
+library(memuse)
+library(tmap)
+library(tidyverse)
+library(ncdf4)
+library(INLA)
+library(raster)
+
+```
+
+
+### Grab data
+
+```{r}
+# Aggregated metrics temp and waves. Grab only first and last 5 years of data.
+# Set wd
+wd = "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/AggregatedData/Rasters"
+
+WaveTemp = list.files(wd) %>% 
+  str_subset("Annual") %>% 
+  str_subset("SD", negate = TRUE) #Grabs all data
+
+WaveTempReduced = map(c("2002", "2003", "2004", "2005", "2006", "2007", "2015", "2016", "2017", "2018", "2019", "2020"), str_subset, string = WaveTemp) %>% 
+  reduce(union)
+
+WaveTempRast = rast(paste(wd, WaveTempReduced, sep = "/"))
+
+# Bioregion and MPA status
+wd = "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/EcologicalClassifications"
+
+BioRegionRast = rast(paste(wd, "regionRast.tif", sep = "/"))
+
+ProtectedRast = rast(paste(wd, "mpaProtectionRast.tif", sep = "/"))
+
+# Terrain metrics and depth
+wd = "Z:/GIS-Res/Projects/ParksVic_Hmsc/EnvironmentalLayers/Bathymetry"
+
+TerrainMetricsRast = rast(paste(wd,c("AdjSDStatewide50mMean.tif",
+                            "BPIStatewide50mMean.tif",
+                            "ProfcStatewide50mMean.tif"),
+                            sep = "/"))
+
+DepthRast = rast(paste(wd, "VICBathy50mMean.tif", sep = "/"))
+names(DepthRast) = "Depth"
+
+
+# Check they all stack correctly. Same CRS, cell size, etc. Note that wave and temp are left out for now as they need additional wrangling in the next step.
+masterStack = c(BioRegionRast,
+              ProtectedRast,
+              TerrainMetricsRast,
+              DepthRast)
+
+# Rudimentary check that all the rasters have same crs, extent, etc
+masterStack
+WaveTempRast
+
+```
+
+### Compute XYZ of the rasters
+
+```{r}
+# Easier process for the others as they don't vary across time.
+masterXYZ = masterStack %>% as.data.frame(xy = TRUE, na.rm = FALSE)
+
+# Wrangle temp and waves. As these are temporally variable
+WaveTempXYZ = WaveTempRast %>% as.data.frame(xy = TRUE, na.rm = FALSE)
+
+Temp = bind_cols(
+  WaveTempXYZ %>% 
+       dplyr::select(starts_with("Temperature")) %>% 
+       pivot_longer(cols = names(.), #Grab only temp data
+                    cols_vary = "slowest",
+                    names_prefix = "TemperatureAnnualMean",
+                    values_to = "TemperatureAnnualMean",
+                    names_to = "Year"),
+
+  map(seq_len(12),
+                ~WaveTempXYZ %>% 
+       dplyr::select("x") %>% 
+       pivot_longer(cols = names(.), #Grab only x data
+                    cols_vary = "slowest",
+                    values_to = "x",
+                    names_to = "NA") %>% 
+    dplyr::select("x")) %>% 
+    bind_rows(),
+  
+  map(seq_len(12),
+                ~WaveTempXYZ %>% 
+       dplyr::select("y") %>% 
+       pivot_longer(cols = names(.), #Grab only x data
+                    cols_vary = "slowest",
+                    values_to = "y",
+                    names_to = "NA") %>% 
+    dplyr::select("y")) %>% 
+    bind_rows())
+
+
+
+Waves = bind_cols(
+  WaveTempXYZ %>% 
+       dplyr::select(starts_with("Signif")) %>% 
+       pivot_longer(cols = names(.), #Grab only temp data
+                    cols_vary = "slowest",
+                    names_prefix = "SignifWaveHeightAnnualMean",
+                    values_to = "SignifWaveHeightAnnualMean",
+                    names_to = "Year"),
+
+  map(seq_len(12),
+                ~WaveTempXYZ %>% 
+       dplyr::select("x") %>% 
+       pivot_longer(cols = names(.), #Grab only x data
+                    cols_vary = "slowest",
+                    values_to = "x",
+                    names_to = "NA") %>% 
+    dplyr::select("x")) %>% 
+    bind_rows(),
+  
+  map(seq_len(12),
+                ~WaveTempXYZ %>% 
+       dplyr::select("y") %>% 
+       pivot_longer(cols = names(.), #Grab only x data
+                    cols_vary = "slowest",
+                    values_to = "y",
+                    names_to = "NA") %>% 
+    dplyr::select("y")) %>% 
+    bind_rows())
+
+# Repeat the masterXYZ by the number of years we have in the data so that the N rows matches with the temp and wave data.
+masterXYZFinal = map(seq_len(12),
+                ~masterXYZ) %>%
+  bind_rows()
+
+#Quick check that all lat lons are in the same order. Use first 500k points as indicator.
+#Looks like everything is in the same order :)
+table(masterXYZFinal$x[1:500000] == Temp$x[1:500000])
+
+table(masterXYZFinal$x[1:500000] == Waves$x[1:500000])
+
+table(Temp$x[1:500000] == Temp$x[1:500000])
+
+#Bind all tables
+masterXYZFinal = masterXYZFinal %>% 
+  bind_cols(Temp %>% dplyr::select("Year", "TemperatureAnnualMean")) %>% 
+  bind_cols(Waves %>% dplyr::select("SignifWaveHeightAnnualMean")) %>% 
+  relocate("Year", .before = "x")
+
+#Export as csv. Each year in turn.
+for (i in unique(masterXYZFinal$Year)){
+  setwd("Z:/GIS-Res/Projects/ParksVic_Hmsc/Modelling/PredictorStacks")
+
+  write.csv(masterXYZFinal %>% filter(Year == i),
+            paste("PredictionGrid", i, ".csv", sep = ""),
+            row.names = FALSE)
+            }
+
+```
+
+
